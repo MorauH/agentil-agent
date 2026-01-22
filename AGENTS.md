@@ -19,7 +19,7 @@ This file provides essential context for AI assistants working on this codebase.
 │                         Agentil Agent Server (Python)                        │
 │                                                                              │
 │  ┌──────────────┐     ┌──────────────┐     ┌──────────────────────────────┐ │
-│  │  WebSocket   │     │   Session    │     │      OpenCode Bridge         │ │
+│  │  WebSocket   │     │   Session    │     │      Agent Backend           │ │
 │  │   Server     │◀───▶│   Manager    │◀───▶│  (HTTP + SSE to OpenCode)    │ │
 │  │  (FastAPI)   │     │              │     └──────────────────────────────┘ │
 │  └──────────────┘     └──────┬───────┘                                      │
@@ -65,7 +65,7 @@ agentil-agent/
 │   ├── audio.py           # Audio format conversion (ffmpeg)
 │   ├── stt.py             # Speech-to-Text (Whisper)
 │   ├── tts.py             # Text-to-Speech (MeloTTS)
-│   ├── bridge.py          # OpenCode HTTP client + SSE streaming
+│   ├── agent/             # Backend agents (e.g., OpenCode)
 │   └── client/
 │       └── text_client.py # CLI test client (text in/out)
 ├── pyproject.toml         # Python project config, dependencies
@@ -88,7 +88,7 @@ agentil-agent/
 ### 2. Session Manager (`session.py`)
 
 - `Session`: Manages voice interaction state
-- Coordinates STT, TTS, and OpenCode bridge
+- Coordinates STT, TTS, and agent backend
 - States: `IDLE`, `LISTENING`, `PROCESSING`, `SPEAKING`, `ERROR`
 - Sentence-level TTS streaming for low latency
 - `SessionManager`: Singleton-like session management (single-user mode)
@@ -104,7 +104,7 @@ agentil-agent/
 
 - Uses **Pydantic v2** for validation
 - Supports TOML config files
-- Config sections: `ServerConfig`, `OpenCodeConfig`, `STTConfig`, `TTSConfig`, `AudioConfig`, `AgentConfig`
+- Config sections: `ServerConfig`, `OpenCodeConfig`, `AgentBackendConfig`, `AssistantConfig`, `STTConfig`, `TTSConfig`, `AudioConfig`
 - Token generation and management
 - Working directory resolution
 
@@ -129,12 +129,12 @@ agentil-agent/
 - Supports multiple speakers (EN-US, EN-BR, EN-AU)
 - Lazy-loads model on first use
 
-### 8. OpenCode Bridge (`bridge.py`)
+### 8. Agent Backend (`agent/`)
 
-- `OpenCodeBridge`: HTTP client for OpenCode server
-- `stream_response()`: Async generator for SSE streaming
-- Session management
-- Auto-start server capability
+- `BaseAgent` interface + `create_agent()` factory
+- OpenCode implementation in `src/agentil_agent/agent/opencode/`
+- Streaming responses via `BaseAgent.stream_response()`
+- Optional server auto-start (OpenCode)
 
 ## WebSocket Protocol
 
@@ -153,7 +153,7 @@ agentil-agent/
 ### Server → Client
 
 ```json
-{"type": "connected", "session_id": "abc123", "server_version": "0.2.0"}
+{"type": "connected", "session_id": "abc123", "server_version": "0.3.0"}
 {"type": "transcript", "content": "Hello", "final": true}
 {"type": "response_start"}
 {"type": "response_delta", "content": "Sure, "}
@@ -187,7 +187,7 @@ agentil-agent token --regenerate       # Generate new token
 # Testing
 agentil-agent check                    # Check dependencies
 agentil-agent test-tts                 # Test TTS
-agentil-agent test-bridge              # Test OpenCode connection
+agentil-agent test-agent              # Test configured agent backend
 ```
 
 ## Configuration File
@@ -200,11 +200,13 @@ host = "0.0.0.0"
 port = 8765
 token = "your-secret-token"
 
-[opencode]
+[agent]
+type = "opencode"
+
+[agent.opencode]
 host = "127.0.0.1"
 port = 4096
 auto_start = true
-working_dir = "~/.config/agentil-agent/workspace"
 
 [stt]
 model = "base"  # tiny, base, small, medium, large
@@ -219,7 +221,7 @@ device = "auto"
 input_format = "webm/opus"
 output_format = "mp3"
 
-[agent]
+[assistant]
 name = "voice-assistant"
 prompt = "You are a voice assistant..."
 ```

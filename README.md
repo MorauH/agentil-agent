@@ -121,11 +121,11 @@ agentil-agent test-tts
 agentil-agent test-stt
 agentil-agent test-stt --duration 5
 
-# Test OpenCode bridge connection
-agentil-agent test-bridge
+# Test configured agent backend
+agentil-agent test-agent
 
 # Test with custom prompt
-agentil-agent test-bridge -p "What is 2+2?"
+agentil-agent test-agent -p "What is 2+2?"
 ```
 
 ## Configuration
@@ -141,34 +141,29 @@ agentil-agent config-init ~/.config/agentil-agent/config.toml
 ### Configuration Options
 
 ```toml
-[opencode]
+# Backend agent selection
+[agent]
+type = "opencode"
+
+[agent.opencode]
 host = "127.0.0.1"
 port = 4096
 auto_start = true  # Start OpenCode server if not running
 
 [stt]
 model = "base"  # tiny, base, small, medium, large
-energy_threshold = 1000
-phrase_timeout = 3.0
-device = "default"  # Microphone device
 
 [tts]
 speaker = "EN-BR"  # EN-US, EN-BR, EN-AU, EN-Default
 speed = 1.2
 device = "auto"  # cpu, cuda, mps, auto
 
-[voice]
-mode = "ptt"  # ptt, continuous
-ptt_key = "space"
-interrupt_on_speech = true
-streaming_tts = true
-
-# Sandbox configuration (Phase 4)
+# Sandbox configuration
 [sandbox]
 path = "~/.config/agentil-agent/workspace"
 
-# Voice assistant agent (Phase 4)
-[agent]
+# Voice assistant prompt used to generate sandbox opencode.json
+[assistant]
 name = "voice-assistant"
 prompt = """
 You are a voice assistant. Keep responses concise and conversational.
@@ -188,9 +183,9 @@ agentil-agent/
 │   ├── config.py        # Configuration management
 │   ├── tts.py           # Text-to-Speech (MeloTTS)
 │   ├── stt.py           # Speech-to-Text (Whisper)
-│   ├── bridge.py        # OpenCode HTTP client + SSE streaming
-│   ├── controller.py    # Voice state machine orchestration
-│   └── keyboard.py      # PTT keyboard handling
+│   ├── agent/           # Agent backend abstraction
+│   ├── sandbox.py        # Sandbox workspace + opencode.json
+│   └── session.py        # WebSocket session manager
 ├── pyproject.toml       # Python project config
 ├── flake.nix            # Nix development environment
 ├── PROJECT_STATE.md     # Implementation roadmap
@@ -207,8 +202,8 @@ python -m agentil_agent.tts
 # Test STT module directly
 python -m agentil_agent.stt
 
-# Test OpenCode bridge directly
-python -m agentil_agent.bridge
+# Test configured agent backend
+agentil-agent test-agent
 ```
 
 ## Roadmap

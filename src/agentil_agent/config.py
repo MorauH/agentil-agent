@@ -102,12 +102,27 @@ class AudioConfig(BaseModel):
 
 
 # =============================================================================
-# Agent Configuration
+# Agent Backend Configuration
 # =============================================================================
 
 
-# Default voice-assistant agent prompt optimized for TTS output
-DEFAULT_AGENT_PROMPT = """You are a voice assistant. Your responses will be spoken aloud via text-to-speech.
+class AgentBackendConfig(BaseModel):
+    """Agent backend settings (which AI agent implementation to use)."""
+
+    type: str = Field(
+        default="opencode",
+        description="Backend agent implementation to use (e.g., opencode)",
+    )
+    opencode: OpenCodeConfig = Field(default_factory=OpenCodeConfig)
+
+
+# =============================================================================
+# Voice Assistant Configuration
+# =============================================================================
+
+
+# Default voice-assistant prompt optimized for TTS output
+DEFAULT_ASSISTANT_PROMPT = """You are a voice assistant. Your responses will be spoken aloud via text-to-speech.
 
 Guidelines:
 - Keep responses concise and conversational
@@ -120,15 +135,17 @@ Guidelines:
 """
 
 
-class AgentConfig(BaseModel):
-    """Voice-assistant agent settings."""
+class AssistantConfig(BaseModel):
+    """Voice assistant prompt/settings."""
 
-    name: str = Field(default="voice-assistant", description="Agent name")
+    name: str = Field(default="voice-assistant", description="Assistant name")
     description: str = Field(
-        default="Voice-optimized assistant for general tasks", description="Agent description"
+        default="Voice-optimized assistant for general tasks",
+        description="Assistant description",
     )
     prompt: str = Field(
-        default=DEFAULT_AGENT_PROMPT, description="System prompt for the voice assistant"
+        default=DEFAULT_ASSISTANT_PROMPT,
+        description="System prompt for the voice assistant",
     )
 
 
@@ -163,11 +180,11 @@ class Config(BaseModel):
     """Main configuration for Agentil Agent Server."""
 
     server: ServerConfig = Field(default_factory=ServerConfig)
-    opencode: OpenCodeConfig = Field(default_factory=OpenCodeConfig)
+    agent: AgentBackendConfig = Field(default_factory=AgentBackendConfig)
+    assistant: AssistantConfig = Field(default_factory=AssistantConfig)
     stt: STTConfig = Field(default_factory=STTConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
     audio: AudioConfig = Field(default_factory=AudioConfig)
-    agent: AgentConfig = Field(default_factory=AgentConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
 
     @classmethod
@@ -253,9 +270,9 @@ class Config(BaseModel):
     def ensure_token(self) -> str:
         """
         Ensure the server has an authentication token.
-        
+
         Generates one if not set and saves config.
-        
+
         Returns:
             The authentication token
         """

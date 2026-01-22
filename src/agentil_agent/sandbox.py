@@ -77,13 +77,14 @@ def generate_opencode_json(config: "Config") -> dict:
     """
     return {
         "$schema": "https://opencode.ai/config.json",
+        "model": "github-copilot/gpt-5-mini", # TODO: temporary free model
         "agent": {
-            config.agent.name: {
-                "description": config.agent.description,
-                "prompt": config.agent.prompt,
+            config.assistant.name: {
+                "description": config.assistant.description,
+                "prompt": config.assistant.prompt,
             }
         },
-        "default_agent": config.agent.name,
+        "default_agent": config.assistant.name,
     }
 
 
@@ -115,11 +116,11 @@ def update_sandbox_agent(config: "Config") -> None:
     if "agents" not in existing:
         existing["agents"] = {}
 
-    existing["agents"][config.agent.name] = {
-        "description": config.agent.description,
-        "systemPrompt": config.agent.prompt,
+    existing["agents"][config.assistant.name] = {
+        "description": config.assistant.description,
+        "systemPrompt": config.assistant.prompt,
     }
-    existing["defaultAgent"] = config.agent.name
+    existing["defaultAgent"] = config.assistant.name
 
     opencode_json_path.write_text(json.dumps(existing, indent=2))
     logger.info(f"Updated voice-assistant agent in {opencode_json_path}")

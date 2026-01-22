@@ -38,7 +38,7 @@ from .session import SessionManager
 logger = logging.getLogger(__name__)
 
 # Version
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 
 # =============================================================================
@@ -74,22 +74,22 @@ def get_app_state() -> AppState:
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     global _app_state
-    
+
     config = get_config()
     _app_state = AppState(config)
-    
+
     logger.info(f"Agentil Agent Server v{__version__} starting...")
     logger.info(f"Server: {config.server.host}:{config.server.port}")
-    logger.info(f"OpenCode: {config.opencode.host}:{config.opencode.port}")
+    logger.info(f"OpenCode: {config.agent.opencode.host}:{config.agent.opencode.port}")
     logger.info(f"Working directory: {config.get_working_dir()}")
     logger.info(f"Auth token: {_app_state.token[:8]}...")
-    
+
     # Ensure sandbox is initialized (creates directory + opencode.json)
     sandbox_path = ensure_sandbox(config)
     logger.info(f"Sandbox initialized: {sandbox_path}")
-    
+
     yield
-    
+
     # Cleanup
     logger.info("Shutting down...")
     if _app_state:
@@ -104,27 +104,28 @@ async def lifespan(app: FastAPI):
 def create_app(config: Config | None = None) -> FastAPI:
     """
     Create the FastAPI application.
-    
+
     Args:
         config: Optional configuration (uses global config if not provided)
-        
+
     Returns:
         Configured FastAPI application
     """
     if config:
         from .config import set_config
+
         set_config(config)
-    
+
     app = FastAPI(
         title="Agentil Agent Server",
         description="WebSocket API for voice interaction with OpenCode",
         version=__version__,
         lifespan=lifespan,
     )
-    
+
     # Get config for CORS setup
     cfg = config or get_config()
-    
+
     # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -133,10 +134,10 @@ def create_app(config: Config | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
+
     # Register routes
     app.include_router(api_router)
-    
+
     return app
 
 
@@ -166,8 +167,8 @@ async def server_info() -> dict[str, Any]:
     return {
         "version": __version__,
         "opencode": {
-            "host": state.config.opencode.host,
-            "port": state.config.opencode.port,
+            "host": state.config.agent.opencode.host,
+            "port": state.config.agent.opencode.port,
         },
         "stt": {
             "model": state.config.stt.model,
@@ -195,24 +196,24 @@ async def websocket_endpoint(
 ) -> None:
     """
     Main WebSocket endpoint for voice communication.
-    
+
     Query Parameters:
         token: Authentication token
     """
     state = get_app_state()
-    
+
     # Validate token
     if token != state.token:
         await websocket.close(code=4001, reason="Invalid token")
         logger.warning(f"Connection rejected: invalid token from {websocket.client}")
         return
-    
+
     await websocket.accept()
     logger.info(f"Client connected: {websocket.client}")
-    
+
     # Generate session ID
     session_id = secrets.token_hex(8)
-    
+
     # Message sending helpers
     async def send_message(msg: ServerMessage) -> None:
         """Send a JSON message to the client."""
@@ -220,21 +221,21 @@ async def websocket_endpoint(
             await websocket.send_json(msg.model_dump())
         except Exception as e:
             logger.error(f"Failed to send message: {e}")
-    
+
     async def send_binary(data: bytes) -> None:
         """Send binary data to the client."""
         try:
             await websocket.send_bytes(data)
         except Exception as e:
             logger.error(f"Failed to send binary data: {e}")
-    
+
     # Get or create session
     session = await state.session_manager.get_or_create_session(
         send_message=send_message,
         send_binary=send_binary,
         session_id=session_id,
     )
-    
+
     # Send connected message
     await send_message(
         ConnectedMessage(
@@ -242,15 +243,15 @@ async def websocket_endpoint(
             server_version=__version__,
         )
     )
-    
+
     try:
         while True:
             # Receive message (can be text or binary)
             message = await websocket.receive()
-            
+
             if message["type"] == "websocket.disconnect":
                 break
-            
+
             elif message["type"] == "websocket.receive":
                 if "text" in message:
                     # JSON message
@@ -258,7 +259,7 @@ async def websocket_endpoint(
                 elif "bytes" in message:
                     # Binary audio data
                     session.add_audio_chunk(message["bytes"])
-    
+
     except WebSocketDisconnect:
         logger.info(f"Client disconnected: {websocket.client}")
     except Exception as e:
@@ -278,7 +279,7 @@ async def handle_json_message(
 ) -> None:
     """
     Handle an incoming JSON message.
-    
+
     Args:
         session: The voice session
         raw_message: Raw JSON string
@@ -290,40 +291,42 @@ async def handle_json_message(
         logger.warning(f"Invalid JSON: {e}")
         await send_message(ErrorMessage(message="Invalid JSON", code="parse_error"))
         return
-    
+
     msg = parse_client_message(data)
-    
+
     if msg is None:
         logger.warning(f"Unknown message type: {data.get('type')}")
         await send_message(
             ErrorMessage(message=f"Unknown message type: {data.get('type')}", code="unknown_type")
         )
         return
-    
+
     # Handle message by type
     if isinstance(msg, TextMessage):
         # Process text input in background
         asyncio.create_task(session.process_text(msg.content))
-    
+
     elif isinstance(msg, AudioStartMessage):
         session.start_audio_input(msg.format.value)
-    
+
     elif isinstance(msg, AudioEndMessage):
         # Process audio in background
         asyncio.create_task(session.end_audio_input())
-    
+
     elif isinstance(msg, CancelMessage):
         await session.cancel()
-    
+
     elif isinstance(msg, ConfigMessage):
-        logger.info(f"Received config: tts_enabled={msg.tts_enabled}, stt_enabled={msg.stt_enabled}")
+        logger.info(
+            f"Received config: tts_enabled={msg.tts_enabled}, stt_enabled={msg.stt_enabled}"
+        )
         if msg.tts_enabled is not None:
             session.tts_enabled = msg.tts_enabled
             logger.info(f"Session TTS set to: {session.tts_enabled}")
         if msg.stt_enabled is not None:
             session.stt_enabled = msg.stt_enabled
         logger.info(f"Config applied: tts={session.tts_enabled}, stt={session.stt_enabled}")
-    
+
     elif isinstance(msg, PingMessage):
         await send_message(PongMessage())
 
@@ -341,7 +344,7 @@ def run_server(
 ) -> None:
     """
     Run the WebSocket server.
-    
+
     Args:
         host: Override host from config
         port: Override port from config
@@ -349,45 +352,46 @@ def run_server(
         log_level: Logging level
     """
     import uvicorn
-    
+
     # Configure logging
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-    
+
     # Load config
     config = Config.load(config_path) if config_path else Config.load()
-    
+
     # Apply overrides
     if host:
         config.server.host = host
     if port:
         config.server.port = port
-    
+
     # Ensure token exists
     token = config.ensure_token()
-    
+
     # Save config if token was generated
     config_file = Config.get_default_config_path()
     if not config_file.exists():
         config.save(config_file)
         logger.info(f"Saved config to {config_file}")
-    
+
     # Print connection info
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Agentil Agent Server v{__version__}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"WebSocket URL: ws://{config.server.host}:{config.server.port}/ws")
     print(f"Auth Token:    {token}")
-    print(f"{'='*60}\n")
-    
+    print(f"{'=' * 60}\n")
+
     # Create and run app
     from .config import set_config
+
     set_config(config)
-    
+
     app = create_app(config)
-    
+
     uvicorn.run(
         app,
         host=config.server.host,

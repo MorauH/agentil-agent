@@ -1,20 +1,21 @@
 """
 Session manager for Agentil Agent Server.
 
-Manages the voice session state and coordinates STT, TTS, and OpenCode bridge.
+Manages the voice session state and coordinates STT, TTS, and agent backend.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from os import wait
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 import numpy as np
 
 from .audio import AudioBuffer, decode_audio_to_pcm, encode_audio, split_text_into_sentences
-from .bridge import OpenCodeBridge
+from .agent import BaseAgent, create_agent
 from .config import Config
 from .protocol import (
     AudioChunkMessage,
@@ -47,7 +48,7 @@ BinarySender = Callable[[bytes], Coroutine[Any, Any, None]]
 class Session:
     """
     Voice session that coordinates all components.
-    
+
     Handles:
     - Text input → OpenCode → Text/Audio output
     - Audio input → STT → OpenCode → Text/Audio output
@@ -64,7 +65,7 @@ class Session:
     ) -> None:
         """
         Initialize a voice session.
-        
+
         Args:
             config: Server configuration
             send_message: Callback to send JSON messages to client
@@ -75,22 +76,23 @@ class Session:
         self.session_id = session_id
         self._send_message = send_message
         self._send_binary = send_binary
-        
+
         # State
         self._state = SessionState.IDLE
         self._tts_enabled = True
         self._stt_enabled = True
         self._cancelled = False
-        
+
         # Audio buffer for incoming audio
         self._audio_buffer = AudioBuffer()
         self._audio_format: str = "webm"
-        
+
         # Components (lazy loaded)
         self._stt_engine: STTEngine | None = None
         self._tts_engine: TTSEngine | None = None
-        self._bridge: OpenCodeBridge | None = None
-        
+        self._agent: BaseAgent | None = None
+        self._agent_session_id: str | None = None
+
         # Locks
         self._processing_lock = asyncio.Lock()
 
@@ -143,13 +145,19 @@ class Session:
             )
         return self._tts_engine
 
-    def _get_bridge(self) -> OpenCodeBridge:
-        """Get or create OpenCode bridge."""
-        if self._bridge is None:
-            working_dir = self.config.get_working_dir()
-            logger.info(f"Creating OpenCode bridge (working_dir: {working_dir})")
-            self._bridge = OpenCodeBridge(self.config, working_dir=working_dir)
-        return self._bridge
+    async def _ensure_agent_session(self) -> tuple[BaseAgent, str]:
+        """Get or create the backend agent + its conversation session."""
+        if self._agent is None:
+            logger.info(f"Creating agent backend: {self.config.agent.type}")
+            self._agent = create_agent(self.config.agent.type, self.config)
+
+        await self._agent.initialize()
+
+        if self._agent_session_id is None:
+            session = await self._agent.create_session(title="Voice Session")
+            self._agent_session_id = session.id
+
+        return self._agent, self._agent_session_id
 
     # =========================================================================
     # State Management
@@ -168,9 +176,9 @@ class Session:
     async def process_text(self, text: str) -> None:
         """
         Process text input from client.
-        
-        Sends to OpenCode and streams back response text and audio.
-        
+
+        Sends to the configured agent backend and streams back response text and audio.
+
         Args:
             text: User's text message
         """
@@ -179,37 +187,39 @@ class Session:
 
         async with self._processing_lock:
             self._cancelled = False
-            
+
             logger.info(f"Processing text: '{text[:50]}...' (TTS enabled: {self._tts_enabled})")
-            
+
             try:
                 await self._set_state(SessionState.PROCESSING)
-                
-                # Get bridge and ensure connection
-                bridge = self._get_bridge()
-                bridge.ensure_connection()
-                
+
+                # Get or create backend agent session
+                agent, agent_session_id = await self._ensure_agent_session()
+
                 # Start response
                 await self._send_message(ResponseStartMessage())
-                
+
                 # Stream response from OpenCode
                 full_response = ""
                 sentence_buffer = ""
-                
-                async for chunk in bridge.stream_response(text):
+
+                async for chunk in agent.stream_response(agent_session_id, text):
+                    logger.debug(f"Chunk: {chunk}") # TODO: temporary
                     if self._cancelled:
                         logger.info("Processing cancelled")
                         break
-                    
+
                     # Send text delta
                     await self._send_message(ResponseDeltaMessage(content=chunk))
                     full_response += chunk
                     sentence_buffer += chunk
-                    
+
                     # Check for complete sentences to TTS
                     if self._tts_enabled:
                         sentences = split_text_into_sentences(sentence_buffer)
-                        logger.debug(f"TTS check: buffer='{sentence_buffer[:50]}...', sentences={len(sentences)}")
+                        logger.debug(
+                            f"TTS check: buffer='{sentence_buffer[:50]}...', sentences={len(sentences)}"
+                        )
                         if len(sentences) > 1:
                             # We have at least one complete sentence
                             for sentence in sentences[:-1]:
@@ -217,21 +227,19 @@ class Session:
                                 await self._speak_sentence(sentence)
                             # Keep the incomplete part
                             sentence_buffer = sentences[-1]
-                
+
                 # Handle any remaining text
                 if not self._cancelled:
                     await self._send_message(ResponseEndMessage())
-                    
+
                     # Speak remaining sentence buffer
                     if self._tts_enabled and sentence_buffer.strip():
                         logger.info(f"TTS: Speaking final buffer: {sentence_buffer[:50]}...")
                         await self._speak_sentence(sentence_buffer.strip())
-                
+
             except Exception as e:
                 logger.exception("Error processing text")
-                await self._send_message(
-                    ErrorMessage(message=str(e), code="processing_error")
-                )
+                await self._send_message(ErrorMessage(message=str(e), code="processing_error"))
             finally:
                 await self._set_state(SessionState.IDLE)
 
@@ -242,7 +250,7 @@ class Session:
     def start_audio_input(self, audio_format: str) -> None:
         """
         Start receiving audio input.
-        
+
         Args:
             audio_format: Format of incoming audio (e.g., "webm/opus")
         """
@@ -254,7 +262,7 @@ class Session:
     def add_audio_chunk(self, data: bytes) -> None:
         """
         Add an audio chunk to the buffer.
-        
+
         Args:
             data: Raw audio bytes
         """
@@ -264,7 +272,7 @@ class Session:
     async def end_audio_input(self) -> None:
         """
         End audio input and process the buffered audio.
-        
+
         Transcribes the audio and processes the resulting text.
         """
         if self._audio_buffer.is_empty:
@@ -273,16 +281,18 @@ class Session:
 
         async with self._processing_lock:
             self._cancelled = False
-            
+
             try:
                 await self._set_state(SessionState.LISTENING)
-                
+
                 # Get audio data
                 audio_data = self._audio_buffer.get_all()
                 self._audio_buffer.clear()
-                
-                logger.info(f"Processing audio: {len(audio_data)} bytes, format: {self._audio_format}")
-                
+
+                logger.info(
+                    f"Processing audio: {len(audio_data)} bytes, format: {self._audio_format}"
+                )
+
                 # Decode to PCM
                 pcm_audio = await asyncio.get_event_loop().run_in_executor(
                     None,
@@ -290,12 +300,12 @@ class Session:
                     audio_data,
                     self._audio_format,
                 )
-                
+
                 if len(pcm_audio) == 0:
                     logger.warning("No audio data after decoding")
                     await self._set_state(SessionState.IDLE)
                     return
-                
+
                 # Transcribe
                 stt_engine = self._get_stt_engine()
                 transcript = await asyncio.get_event_loop().run_in_executor(
@@ -303,22 +313,20 @@ class Session:
                     stt_engine.transcribe_audio,
                     pcm_audio,
                 )
-                
+
                 logger.info(f"Transcribed: {transcript}")
-                
+
                 # Send transcript to client
-                await self._send_message(
-                    TranscriptMessage(content=transcript, final=True)
-                )
-                
+                await self._send_message(TranscriptMessage(content=transcript, final=True))
+
                 if not transcript.strip():
                     logger.info("Empty transcript, skipping processing")
                     await self._set_state(SessionState.IDLE)
                     return
-                
+
                 # Process the transcribed text
                 # Note: We release the lock briefly to allow cancellation
-                
+
             except Exception as e:
                 logger.exception("Error processing audio")
                 await self._send_message(
@@ -326,7 +334,7 @@ class Session:
                 )
                 await self._set_state(SessionState.IDLE)
                 return
-        
+
         # Process text (outside the lock to allow cancellation)
         if not self._cancelled and transcript.strip():
             await self.process_text(transcript)
@@ -338,7 +346,7 @@ class Session:
     async def _speak_sentence(self, sentence: str) -> None:
         """
         Generate and stream TTS audio for a sentence.
-        
+
         Args:
             sentence: Text to speak
         """
@@ -348,7 +356,7 @@ class Session:
 
         try:
             await self._set_state(SessionState.SPEAKING)
-            
+
             # Generate TTS audio
             logger.info(f"TTS: Synthesizing '{sentence[:50]}...'")
             tts_engine = self._get_tts_engine()
@@ -357,17 +365,17 @@ class Session:
                 tts_engine.synthesize,
                 sentence,
             )
-            
+
             logger.info(f"TTS: Synthesized {len(audio_data)} samples")
-            
+
             if len(audio_data) == 0:
                 logger.warning("TTS: No audio generated")
                 return
-            
+
             # Encode to output format
             output_format = self.config.audio.output_format.lower()
             sample_rate = tts_engine.sample_rate
-            
+
             logger.debug(f"TTS: Encoding to {output_format} at {sample_rate}Hz")
             encoded_audio = await asyncio.get_event_loop().run_in_executor(
                 None,
@@ -376,13 +384,13 @@ class Session:
                 output_format,
                 sample_rate,
             )
-            
+
             logger.info(f"TTS: Encoded to {len(encoded_audio)} bytes")
-            
+
             if len(encoded_audio) == 0:
                 logger.warning("TTS: Encoding produced no output")
                 return
-            
+
             # Send audio to client
             # Map format string to AudioFormat enum
             format_map = {
@@ -392,7 +400,7 @@ class Session:
                 "ogg": AudioFormat.OGG_OPUS,
             }
             audio_format = format_map.get(output_format, AudioFormat.MP3)
-            
+
             # Send audio chunk message (JSON)
             await self._send_message(
                 AudioChunkMessage(
@@ -402,12 +410,12 @@ class Session:
                     is_last=True,
                 )
             )
-            
+
             # Send binary audio data
             await self._send_binary(encoded_audio)
-            
+
             logger.info(f"TTS: Sent {len(encoded_audio)} bytes for '{sentence[:30]}...'")
-            
+
         except Exception as e:
             logger.exception(f"TTS: Error generating audio for: {sentence[:50]}")
 
@@ -418,31 +426,32 @@ class Session:
     async def cancel(self) -> None:
         """Cancel current operation."""
         self._cancelled = True
-        
-        # Try to abort OpenCode session
-        if self._bridge and self._bridge.current_session:
+
+        # Try to abort backend agent session
+        if self._agent and self._agent_session_id:
             try:
-                await self._bridge.abort_session_async()
+                await self._agent.abort_session(self._agent_session_id)
             except Exception:
                 pass
-        
+
         logger.info("Session cancelled")
 
     async def close(self) -> None:
         """Close the session and clean up resources."""
         await self.cancel()
-        
-        if self._bridge:
-            await self._bridge.aclose()
-            self._bridge = None
-        
+
+        if self._agent:
+            await self._agent.shutdown()
+            self._agent = None
+            self._agent_session_id = None
+
         logger.info(f"Session {self.session_id} closed")
 
 
 class SessionManager:
     """
     Manages the global voice session.
-    
+
     Since all connections share the same session, this provides
     a singleton-like interface.
     """
@@ -450,7 +459,7 @@ class SessionManager:
     def __init__(self, config: Config) -> None:
         """
         Initialize the session manager.
-        
+
         Args:
             config: Server configuration
         """
@@ -466,12 +475,12 @@ class SessionManager:
     ) -> Session:
         """
         Get the existing session or create a new one.
-        
+
         Args:
             send_message: Callback for sending JSON messages
             send_binary: Callback for sending binary data
             session_id: Session identifier
-            
+
         Returns:
             The voice session
         """
@@ -489,7 +498,7 @@ class SessionManager:
                 self._session._send_message = send_message
                 self._session._send_binary = send_binary
                 logger.info(f"Resumed existing session: {session_id}")
-            
+
             return self._session
 
     async def close_session(self) -> None:

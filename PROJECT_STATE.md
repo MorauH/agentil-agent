@@ -26,7 +26,7 @@ The server is **client-agnostic** - designed to work with:
 │                         Agentil Agent Server (Python)                       │
 │                                                                              │
 │  ┌──────────────┐     ┌──────────────┐     ┌──────────────────────────────┐ │
-│  │  WebSocket   │     │   Session    │     │      OpenCode Bridge         │ │
+│  │  WebSocket   │     │   Session    │     │      Agent Backend           │ │
 │  │   Server     │◀───▶│   Manager    │◀───▶│  (HTTP + SSE to OpenCode)    │ │
 │  │  (FastAPI)   │     │              │     └──────────────────────────────┘ │
 │  └──────────────┘     └──────┬───────┘                                      │
@@ -171,7 +171,7 @@ This will be **replaced** by the WebSocket session manager in Phase 5.
 Components to **keep**:
 - `stt.py` - STT engine (Whisper wrapper)
 - `tts.py` - TTS engine (MeloTTS wrapper)
-- `bridge.py` - OpenCode client (with minor modifications)
+- `agent/opencode/` - OpenCode agent backend implementation
 - `config.py` - Configuration system (will be extended)
 
 Components to **replace**:
@@ -290,16 +290,17 @@ host = "0.0.0.0"
 port = 8765
 token = ""  # Auto-generated if empty
 
-[opencode]
+[agent]
+type = "opencode"
+
+[agent.opencode]
 host = "127.0.0.1"
 port = 4096
 auto_start = true
 timeout = 30.0
-working_dir = "~/.config/agentil-agent/workspace"  # Sandbox directory
 
 [stt]
 model = "base"  # tiny, base, small, medium, large
-energy_threshold = 1000
 device = "auto"  # cpu, cuda, auto
 
 [tts]
@@ -310,9 +311,12 @@ device = "auto"  # cpu, cuda, mps, auto
 [audio]
 input_format = "webm/opus"  # Expected from clients
 output_format = "mp3"       # Sent to clients
-sample_rate = 24000
+output_sample_rate = 24000
 
-[agent]
+[sandbox]
+path = "~/.config/agentil-agent/workspace"
+
+[assistant]
 name = "voice-assistant"
 prompt = """
 You are a voice assistant. Your responses will be spoken aloud via text-to-speech.
@@ -369,10 +373,11 @@ agentil-agent/
 │   ├── protocol.py        # WebSocket message types
 │   ├── stt.py             # STT engine (existing, minor updates)
 │   ├── tts.py             # TTS engine (existing, minor updates)
-│   ├── bridge.py          # OpenCode client (existing)
+│   ├── agent/             # Agent backend implementations
 │   ├── audio.py           # Audio format conversion utilities
-│   ├── config.py          # Configuration (extended)
-│   └── cli.py             # CLI entry point (server start)
+│   ├── config.py          # Configuration
+│   ├── sandbox.py         # Sandbox workspace + opencode.json
+│   └── main.py            # CLI entry point
 ├── src/agentil_agent/client/
 │   └── text_client.py     # Simple CLI test client
 ├── pyproject.toml

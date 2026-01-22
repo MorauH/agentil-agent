@@ -1,7 +1,7 @@
 """
-Agentil Agent - WebSocket voice server for OpenCode.
+Agentil Agent - WebSocket voice server for AI agents.
 
-Provides a WebSocket API for voice interaction with OpenCode,
+Provides a WebSocket API for voice interaction with various AI agents,
 supporting STT (speech-to-text) and TTS (text-to-speech).
 """
 
@@ -9,10 +9,11 @@ from .config import (
     Config,
     ServerConfig,
     OpenCodeConfig,
+    AgentBackendConfig,
+    AssistantConfig,
     STTConfig,
     TTSConfig,
     AudioConfig,
-    AgentConfig,
     get_config,
     set_config,
 )
@@ -34,24 +35,28 @@ from .protocol import (
     ErrorMessage,
     parse_client_message,
 )
-from .bridge import (
-    OpenCodeBridge,
-    Session as OpenCodeSession,
-    Message,
-    MessagePart,
-    SSEEvent,
-    ConnectionState,
-    OpenCodeError,
-    OpenCodeConnectionError,
-    OpenCodeNotInstalledError,
-    stream_response_sync,
+
+# Agent abstraction
+from .agent import (
+    BaseAgent,
+    BaseAgentFactory,
+    AgentSession,
+    AgentMessage,
+    AgentResponse,
+    AgentError,
+    AgentNotReadyError,
+    AgentSessionError,
+    create_agent,
+    register_agent_factory,
+    list_available_agents,
 )
+
 from .tts import TTSEngine, speak, stop
 from .stt import STTEngine
 from .session import Session, SessionManager
 from .server import create_app, run_server
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     # Version
@@ -63,7 +68,8 @@ __all__ = [
     "STTConfig",
     "TTSConfig",
     "AudioConfig",
-    "AgentConfig",
+    "AgentBackendConfig",
+    "AssistantConfig",
     "get_config",
     "set_config",
     # Protocol
@@ -83,17 +89,18 @@ __all__ = [
     "StatusMessage",
     "ErrorMessage",
     "parse_client_message",
-    # Bridge
-    "OpenCodeBridge",
-    "OpenCodeSession",
-    "Message",
-    "MessagePart",
-    "SSEEvent",
-    "ConnectionState",
-    "OpenCodeError",
-    "OpenCodeConnectionError",
-    "OpenCodeNotInstalledError",
-    "stream_response_sync",
+    # Agent Abstraction
+    "BaseAgent",
+    "BaseAgentFactory",
+    "AgentSession",
+    "AgentMessage",
+    "AgentResponse",
+    "AgentError",
+    "AgentNotReadyError",
+    "AgentSessionError",
+    "create_agent",
+    "register_agent_factory",
+    "list_available_agents",
     # TTS
     "TTSEngine",
     "speak",

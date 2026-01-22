@@ -147,7 +147,7 @@ Sent immediately after successful connection.
 {
   "type": "connected",
   "session_id": "abc123def456",
-  "server_version": "0.2.0"
+  "server_version": "0.3.0"
 }
 ```
 
@@ -472,7 +472,7 @@ The server also exposes REST endpoints:
 ```json
 // GET /info response
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "opencode": { "host": "127.0.0.1", "port": 4096 },
   "stt": { "model": "base" },
   "tts": { "speaker": "EN-BR", "speed": 1.2 },
