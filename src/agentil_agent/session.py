@@ -50,8 +50,8 @@ class Session:
     Voice session that coordinates all components.
 
     Handles:
-    - Text input → OpenCode → Text/Audio output
-    - Audio input → STT → OpenCode → Text/Audio output
+    - Text input → Agent → Text/Audio output
+    - Audio input → STT → Agent → Text/Audio output
     - State management
     - Streaming coordination
     """
@@ -204,7 +204,6 @@ class Session:
                 sentence_buffer = ""
 
                 async for chunk in agent.stream_response(agent_session_id, text):
-                    logger.debug(f"Chunk: {chunk}") # TODO: temporary
                     if self._cancelled:
                         logger.info("Processing cancelled")
                         break

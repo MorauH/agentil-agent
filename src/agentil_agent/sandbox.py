@@ -81,7 +81,14 @@ def generate_opencode_json(config: "Config") -> dict:
         "agent": {
             config.assistant.name: {
                 "description": config.assistant.description,
+                "mode": "primary",
                 "prompt": config.assistant.prompt,
+                "tools": {
+                    "read": True,
+                    "write": True,
+                    "bash": True,
+                    # TODO: custom mcp servers
+                }
             }
         },
         "default_agent": config.assistant.name,
