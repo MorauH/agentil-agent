@@ -26,6 +26,9 @@
             # Package manager
             uv
 
+            # For dynamically loading mcp-servers
+            git
+
             # OpenCode (AI coding agent)
             opencode
 
