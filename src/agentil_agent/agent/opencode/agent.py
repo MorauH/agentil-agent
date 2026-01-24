@@ -26,7 +26,7 @@ from .session import Session, SessionManager
 from .streaming import StreamManager
 
 if TYPE_CHECKING:
-    from ...config import OpenCodeConfig
+    from ...config import Config, OpenCodeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class OpenCodeAgent(BaseAgent):
 
     def __init__(
         self,
-        config: "OpenCodeConfig",
+        config: "OpenCodeConfig | None",
         working_dir: Path | str | None = None,
     ) -> None:
         """
@@ -51,6 +51,12 @@ class OpenCodeAgent(BaseAgent):
             config: OpenCode configuration
             working_dir: Working directory for OpenCode operations
         """
+        
+        
+        if config is None:
+            self._config_missing = True
+            return
+        
         self.config = config
         self.base_url = f"http://{config.host}:{config.port}"
 
@@ -109,6 +115,9 @@ class OpenCodeAgent(BaseAgent):
             return
 
         logger.info("Initializing OpenCode agent...")
+        
+        if self._config_missing:
+            raise AgentInitializationError("Config invalid")
 
         try:
             # Check if server is already running
@@ -420,22 +429,16 @@ class OpenCodeAgent(BaseAgent):
 class OpenCodeAgentFactory(BaseAgentFactory):
     """Factory for creating OpenCode agent instances."""
 
-    def create_agent(self, config: Any) -> BaseAgent:
+    def create_agent(self, config: "Config") -> BaseAgent:
         """Create an OpenCode agent instance.
 
-        This factory supports being passed either:
-        - the full application `Config` (preferred), or
-        - an `OpenCodeConfig` instance.
+        Args:
+            config: the full application `Config`
         """
 
-        # Preferred: application Config
         opencode_cfg = getattr(getattr(config, "agent", None), "opencode", None)
-        if opencode_cfg is not None:
-            working_dir = config.get_working_dir()
-            return OpenCodeAgent(opencode_cfg, working_dir=working_dir)
-
-        # Fallback: OpenCodeConfig directly
-        return OpenCodeAgent(config)
+        working_dir = config.get_working_dir()
+        return OpenCodeAgent(opencode_cfg, working_dir=working_dir)
 
     def agent_type(self) -> str:
         """Return the agent type this factory creates."""
