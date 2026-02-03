@@ -43,11 +43,21 @@ class OpenCodeConfig(BaseModel):
     """OpenCode server connection settings."""
 
     host: str = Field(default="127.0.0.1", description="OpenCode server hostname")
-    port: int = Field(default=4096, description="OpenCode server port")
+    base_port: int = Field(
+        default=4096, 
+        description="Base port for OpenCode servers (each space gets base_port + offset)"
+    )
+    max_servers: int = Field(
+        default=10,
+        description="Maximum number of concurrent OpenCode servers (port range size)"
+    )
     auto_start: bool = Field(
         default=True, description="Automatically start OpenCode server if not running"
     )
     timeout: float = Field(default=30.0, description="Request timeout in seconds")
+    
+    # Deprecated - kept for backward compatibility
+    port: int = Field(default=4096, description="Deprecated: use base_port instead")
 
 
 # =============================================================================
@@ -150,24 +160,42 @@ class AssistantConfig(BaseModel):
 
 
 # =============================================================================
-# Sandbox Configuration
+# Space Manager Configuration
 # =============================================================================
 
 
-class SandboxConfig(BaseModel):
-    """Sandbox workspace settings."""
+class SpaceManagerConfig(BaseModel):
+    """Space manager settings."""
 
-    path: str = Field(
-        default="~/.config/agentil-agent/workspace",
-        description="Path to the sandbox workspace directory",
+    spaces_root: str = Field(
+        default="~/.config/agentil-agent/spaces",
+        description="Root directory for space storage",
     )
-    auto_create: bool = Field(
-        default=True,
-        description="Automatically create sandbox directory if it doesn't exist",
+    default_space_type: str = Field(
+        default="directory",
+        description="Default type for new spaces",
     )
-    create_opencode_json: bool = Field(
+    auto_initialize: bool = Field(
         default=True,
-        description="Create opencode.json with voice-assistant agent in sandbox",
+        description="Automatically initialize SpaceManager on server startup",
+    )
+
+
+# =============================================================================
+# MCP Manager Configuration
+# =============================================================================
+
+
+class MCPManagerConfig(BaseModel):
+    """MCP manager settings."""
+
+    base_path: str = Field(
+        default="~/.config/agentil-agent/mcp-servers",
+        description="Base directory for MCP server installations",
+    )
+    auto_initialize: bool = Field(
+        default=True,
+        description="Automatically initialize MCPManager on server startup",
     )
 
 
@@ -185,7 +213,8 @@ class Config(BaseModel):
     stt: STTConfig = Field(default_factory=STTConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
     audio: AudioConfig = Field(default_factory=AudioConfig)
-    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
+    spaces: SpaceManagerConfig = Field(default_factory=SpaceManagerConfig)
+    mcp: MCPManagerConfig = Field(default_factory=MCPManagerConfig)
 
     @classmethod
     def get_config_paths(cls) -> list[Path]:
@@ -281,15 +310,22 @@ class Config(BaseModel):
         return self.server.token
 
     def get_working_dir(self) -> Path:
-        """Get the resolved working directory path (from sandbox config)."""
-        return Path(self.sandbox.path).expanduser().resolve()
+        """Get the resolved working directory path (default space workspace)."""
+        return self.get_spaces_root() / "default" / "workspace"
 
     def ensure_working_dir(self) -> Path:
         """Ensure the working directory exists and return its path."""
         work_dir = self.get_working_dir()
-        if self.sandbox.auto_create:
-            work_dir.mkdir(parents=True, exist_ok=True)
+        work_dir.mkdir(parents=True, exist_ok=True)
         return work_dir
+
+    def get_spaces_root(self) -> Path:
+        """Get the resolved spaces root directory path."""
+        return Path(self.spaces.spaces_root).expanduser().resolve()
+
+    def get_mcp_base_path(self) -> Path:
+        """Get the resolved MCP servers base directory path."""
+        return Path(self.mcp.base_path).expanduser().resolve()
 
 
 # =============================================================================

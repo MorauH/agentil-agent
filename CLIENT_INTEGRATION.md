@@ -2,6 +2,14 @@
 
 This document describes how to build a client application that connects to the Agentil Agent WebSocket server.
 
+## Overview
+
+The Agentil Agent server provides:
+- **Voice interaction** - Speech-to-text and text-to-speech
+- **Text interaction** - Send/receive text messages
+- **Space management** - Project workspaces with isolated configurations
+- **MCP management** - Install and enable MCP servers per-space
+
 ## Connection
 
 ### WebSocket Endpoint
@@ -116,18 +124,38 @@ Cancel the current operation (stops response generation and TTS).
 ```
 
 #### 6. Config
-Update runtime settings.
+Update runtime settings, manage spaces, and control MCPs.
 
 ```json
 {
   "type": "config",
+  
+  // Audio settings
   "tts_enabled": true,
-  "stt_enabled": true
+  "stt_enabled": true,
+  
+  // Space management
+  "switch_space": "project-1",
+  
+  // MCP management
+  "install_mcp_url": "https://github.com/user/mcp-server",
+  "active_mcps": ["mcp-server-1", "mcp-server-2"],
+  
+  // History management
+  "clear_history": true
 }
 ```
 
-- `tts_enabled`: Enable/disable text-to-speech audio output
-- `stt_enabled`: Enable/disable speech-to-text processing
+All fields are optional. Only include the settings you want to change.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tts_enabled` | boolean | Enable/disable text-to-speech audio output |
+| `stt_enabled` | boolean | Enable/disable speech-to-text processing |
+| `switch_space` | string | Space ID to switch to |
+| `install_mcp_url` | string | Git URL of MCP server to install |
+| `active_mcps` | string[] | List of MCP IDs to enable in current space |
+| `clear_history` | boolean | Clear conversation history (creates new session) |
 
 #### 7. Ping
 Keepalive message. Server responds with `pong`.
@@ -151,7 +179,68 @@ Sent immediately after successful connection.
 }
 ```
 
-#### 2. Status
+#### 2. Session Update
+Sent after connection and whenever spaces/MCPs change. Contains current session state.
+
+```json
+{
+  "type": "session_update",
+  "available_spaces": [
+    {
+      "id": "default",
+      "name": "Default",
+      "description": "Default workspace"
+    },
+    {
+      "id": "project-1",
+      "name": "My Project",
+      "description": "Web app project"
+    }
+  ],
+  "mcp_servers": [
+    {
+      "name": "rag-mcp",
+      "version": "1.0.0",
+      "enabled": true,
+      "description": "RAG capabilities"
+    },
+    {
+      "name": "github-mcp",
+      "version": "2.1.0",
+      "enabled": false,
+      "description": "GitHub integration"
+    }
+  ],
+  "tts_enabled": true,
+  "stt_enabled": true
+}
+```
+
+Use this to populate UI elements like space selectors and MCP toggles.
+
+#### 3. Operation Progress
+Progress updates for long-running operations (MCP installation, space initialization).
+
+```json
+{
+  "type": "operation_progress",
+  "operation": "install_mcp",
+  "target": "rag-mcp",
+  "status": "in_progress",
+  "progress": 50,
+  "message": "Building with nix..."
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `operation` | string | Operation type: `install_mcp`, `initialize_space` |
+| `target` | string | Target identifier (MCP name, space ID) |
+| `status` | string | `starting`, `in_progress`, `complete`, `failed` |
+| `progress` | number? | Progress percentage (0-100), optional |
+| `message` | string? | Human-readable status message |
+
+#### 4. Status
 Session state update.
 
 ```json
@@ -168,7 +257,7 @@ States:
 - `speaking` - Generating/streaming TTS audio
 - `error` - Error state
 
-#### 3. Transcript
+#### 5. Transcript
 Speech-to-text result (when audio input is used).
 
 ```json
@@ -181,7 +270,7 @@ Speech-to-text result (when audio input is used).
 
 - `final`: `true` for final transcription, `false` for interim results
 
-#### 4. Response Start
+#### 6. Response Start
 Signals the beginning of AI response streaming.
 
 ```json
@@ -190,7 +279,7 @@ Signals the beginning of AI response streaming.
 }
 ```
 
-#### 5. Response Delta
+#### 7. Response Delta
 Incremental AI response text (streaming).
 
 ```json
@@ -202,7 +291,7 @@ Incremental AI response text (streaming).
 
 Accumulate these to build the full response.
 
-#### 6. Response End
+#### 8. Response End
 Signals the end of AI response.
 
 ```json
@@ -211,7 +300,7 @@ Signals the end of AI response.
 }
 ```
 
-#### 7. Audio Stream Start
+#### 9. Audio Stream Start
 Signals the beginning of TTS audio output.
 
 ```json
@@ -222,7 +311,7 @@ Signals the beginning of TTS audio output.
 }
 ```
 
-#### 8. Audio Chunk
+#### 10. Audio Chunk
 Metadata for incoming audio data. Binary audio follows this message.
 
 ```json
@@ -237,7 +326,7 @@ Metadata for incoming audio data. Binary audio follows this message.
 
 **Important**: The actual audio data is sent as a separate binary WebSocket frame immediately after this JSON message.
 
-#### 9. Audio Stream End
+#### 11. Audio Stream End
 Signals the end of TTS audio output.
 
 ```json
@@ -246,7 +335,7 @@ Signals the end of TTS audio output.
 }
 ```
 
-#### 10. Error
+#### 12. Error
 Error notification.
 
 ```json
@@ -258,9 +347,18 @@ Error notification.
 }
 ```
 
+Error codes:
+- `parse_error` - Invalid JSON message
+- `unknown_type` - Unknown message type
+- `processing_error` - Error during AI processing
+- `audio_processing_error` - Error during audio processing
+- `space_switch_error` - Error switching spaces
+- `mcp_install_error` - Error installing MCP
+- `mcp_unavailable` - MCP manager not available
+
 - `fatal`: If `true`, the connection should be closed
 
-#### 11. Pong
+#### 13. Pong
 Response to ping.
 
 ```json

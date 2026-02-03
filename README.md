@@ -1,168 +1,209 @@
 # Agentil Agent
 
-Voice interface for [OpenCode](https://opencode.ai) - interact with the AI coding assistant using your voice.
+WebSocket voice server for [OpenCode](https://opencode.ai) - enables speech-based interaction with the AI coding assistant.
 
 ## Features
 
-- **Speech-to-Text (STT)**: Whisper-based speech recognition
-- **Text-to-Speech (TTS)**: MeloTTS for natural voice output
-- **Sandbox Mode**: Dedicated workspace with voice-optimized assistant (default)
-- **Local Mode**: Standard OpenCode behavior with voice I/O for project work
-- **Push-to-Talk**: Button-based voice input
-- **Continuous Listening**: Always-on voice input mode
-- **Streaming TTS**: Hear responses as they're generated
-- **Interruptible**: Start speaking to stop TTS playback
+- **WebSocket API** - Bidirectional audio/text streaming
+- **Speech-to-Text (STT)** - Whisper-based transcription
+- **Text-to-Speech (TTS)** - MeloTTS for natural voice output
+- **Flexible I/O** - Clients can send text OR audio, receive BOTH text AND audio
+- **Space Management** - Project-based workspaces with isolated configurations
+- **MCP Server Management** - Install and configure MCP servers per-space
 
-## Status
+## Requirements
 
-**Phase 4: Sandbox Mode & Voice-Assistant Agent** - Next
-
-See [PROJECT_STATE.md](./PROJECT_STATE.md) for the full implementation roadmap.
-
-## Operating Modes
-
-### Sandbox Mode (Default)
-
-When you run `agentil-agent` without arguments, it operates in sandbox mode:
-- Uses a dedicated workspace at `~/.config/agentil-agent/workspace/`
-- Runs a voice-optimized assistant agent (concise, TTS-friendly responses)
-- Great for general assistance, note-taking, quick questions
-- Not tied to any specific project
-
-### Local Mode
-
-Use `--local` or `--project <path>` to work on a specific project:
-- Uses your current directory or specified project path
-- Uses the project's `opencode.json` configuration
-- Standard OpenCode behavior, just with voice I/O
-- Best for coding tasks in a specific repository
-
-## Installation
-
-### Prerequisites
-
-- Python 3.11+
+- Python 3.11 (specifically `>=3.11,<3.12`)
+- ffmpeg (for audio format conversion)
 - [OpenCode](https://opencode.ai/docs/) installed and available in PATH
-- A microphone and speakers
 
-### Using Nix (Recommended for NixOS)
+## Quick Start
 
+### 1. Enter Development Environment
+
+**NixOS (Recommended):**
 ```bash
 cd agentil-agent
 nix develop
 ```
 
-This will set up a complete development environment with all dependencies.
-
-### Using UV
-
+**Using UV:**
 ```bash
 cd agentil-agent
 uv sync
 ```
 
-### Using pip
+### 2. Generate Configuration
 
 ```bash
-cd agentil-agent
-pip install -e .
+agentil-agent config-init
 ```
 
-## Usage
+This creates `~/.config/agentil-agent/config.toml` with a generated auth token.
 
-### Quick Start
+### 3. Start the Server
 
 ```bash
-# Start voice interface (sandbox mode, PTT)
-agentil-agent
+agentil-agent serve
+```
 
-# Check installation and server status
+The server will display:
+```
+Server starting on http://0.0.0.0:8765
+Authentication token: <your-token>
+```
+
+### 4. Connect with the CLI Client
+
+In a new terminal:
+
+```bash
+agentil-agent client --token <your-token>
+```
+
+You're now connected! Type messages and press Enter to chat with OpenCode.
+
+## CLI Reference
+
+### Server Commands
+
+```bash
+# Start server with defaults
+agentil-agent serve
+
+# Custom host/port
+agentil-agent serve --host 127.0.0.1 --port 9000
+
+# Debug logging
+agentil-agent serve -l DEBUG
+
+# Use specific config file
+agentil-agent serve -c /path/to/config.toml
+```
+
+### Client Commands
+
+```bash
+# Connect to server
+agentil-agent client --token <token>
+
+# Connect with TTS audio playback
+agentil-agent client --token <token> --tts
+
+# Connect to custom URL
+agentil-agent client --url ws://192.168.1.100:8765/ws --token <token>
+```
+
+### Configuration Commands
+
+```bash
+# Generate default config
+agentil-agent config-init
+
+# Overwrite existing config
+agentil-agent config-init --force
+
+# Show current config
+agentil-agent config-show
+
+# Show/regenerate auth token
+agentil-agent token
+agentil-agent token --regenerate
+```
+
+### Testing Commands
+
+```bash
+# Check system dependencies
 agentil-agent check
 
-# Start in continuous listening mode
-agentil-agent run --mode continuous
-```
-
-### Operating Mode Selection
-
-```bash
-# Sandbox mode (default) - dedicated workspace, voice-optimized agent
-agentil-agent
-
-# Local mode - use current directory
-agentil-agent --local
-# or
-agentil-agent --here
-
-# Project mode - use specific directory
-agentil-agent --project /path/to/project
-```
-
-### Voice Modes
-
-```bash
-# Push-to-talk (default) - hold SPACE to speak
-agentil-agent run --mode ptt
-
-# Continuous listening - always listening
-agentil-agent run --mode continuous
-
-# Custom PTT key
-agentil-agent run --ptt-key f1
-```
-
-### Testing Components
-
-```bash
-# Test Text-to-Speech
+# Test TTS
 agentil-agent test-tts
+agentil-agent test-tts --text "Hello world"
 
-# Test Speech-to-Text (records for 10 seconds by default)
-agentil-agent test-stt
-agentil-agent test-stt --duration 5
-
-# Test configured agent backend
+# Test agent backend
 agentil-agent test-agent
-
-# Test with custom prompt
 agentil-agent test-agent -p "What is 2+2?"
 ```
 
+## Client Commands (In-Session)
+
+Once connected with `agentil-agent client`, these commands are available:
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/quit` | Exit client |
+| `/cancel` | Cancel current operation |
+| `/clear` | Clear conversation history |
+| `/tts on\|off` | Enable/disable TTS |
+| `/stop` | Stop playing audio |
+| `/spaces` | List available spaces |
+| `/space <id>` | Switch to space |
+| `/mcps` | List MCP servers |
+| `/mcp on <id>` | Enable MCP server |
+| `/mcp off <id>` | Disable MCP server |
+| `/mcp install <url>` | Install MCP from git URL |
+
 ## Configuration
 
-Configuration file location: `~/.config/agentil-agent/config.toml`
+Config file location: `~/.config/agentil-agent/config.toml`
 
-### Generate Default Config
-
-```bash
-agentil-agent config-init ~/.config/agentil-agent/config.toml
-```
-
-### Configuration Options
+### Minimal Config
 
 ```toml
-# Backend agent selection
+[server]
+host = "0.0.0.0"
+port = 8765
+token = "your-secret-token"
+
+[agent]
+type = "opencode"
+
+[agent.opencode]
+auto_start = true
+```
+
+### Full Config Example
+
+```toml
+[server]
+host = "0.0.0.0"
+port = 8765
+token = ""  # Auto-generated if empty
+
 [agent]
 type = "opencode"
 
 [agent.opencode]
 host = "127.0.0.1"
 port = 4096
-auto_start = true  # Start OpenCode server if not running
+auto_start = true  # Start OpenCode if not running
+timeout = 30.0
 
 [stt]
 model = "base"  # tiny, base, small, medium, large
+device = "auto"  # cpu, cuda, auto
 
 [tts]
 speaker = "EN-BR"  # EN-US, EN-BR, EN-AU, EN-Default
 speed = 1.2
 device = "auto"  # cpu, cuda, mps, auto
 
-# Sandbox configuration
-[sandbox]
-path = "~/.config/agentil-agent/workspace"
+[audio]
+input_format = "webm/opus"
+output_format = "mp3"
+output_sample_rate = 24000
 
-# Voice assistant prompt used to generate sandbox opencode.json
+[spaces]
+spaces_root = "~/.config/agentil-agent/spaces"
+default_space_type = "directory"
+auto_initialize = true
+
+[mcp]
+base_path = "~/.config/agentil-agent/mcp-servers"
+auto_initialize = true
+
 [assistant]
 name = "voice-assistant"
 prompt = """
@@ -171,57 +212,117 @@ Avoid markdown formatting. Use natural spoken language.
 """
 ```
 
+## Troubleshooting
+
+### "ffmpeg not found"
+
+Audio conversion requires ffmpeg:
+
+```bash
+# NixOS
+nix-shell -p ffmpeg
+
+# Debian/Ubuntu
+apt install ffmpeg
+
+# macOS
+brew install ffmpeg
+```
+
+### "Could not connect to server"
+
+1. Check the server is running: `agentil-agent serve`
+2. Verify the token matches
+3. Check firewall allows the port (default: 8765)
+
+### "Agent error" / OpenCode not starting
+
+1. Ensure OpenCode is installed: `opencode --version`
+2. Check OpenCode can start manually: `opencode serve`
+3. Verify `[agent.opencode]` settings in config
+
+### CUDA Errors
+
+If you see CUDA-related errors, the code will fall back to CPU. To force CPU:
+
+```toml
+[stt]
+device = "cpu"
+
+[tts]
+device = "cpu"
+```
+
 ## Development
+
+### Running from Source
+
+```bash
+# With nix
+nix develop -c python -m agentil_agent.main serve
+
+# With UV
+uv run agentil-agent serve
+
+# Direct Python
+python -m agentil_agent.main serve
+```
+
+### Testing Modules
+
+```bash
+# Test TTS module
+python -m agentil_agent.tts
+
+# Test STT module
+python -m agentil_agent.stt
+
+# Test config loading
+python -m agentil_agent.config
+```
 
 ### Project Structure
 
 ```
 agentil-agent/
 ├── src/agentil_agent/
-│   ├── __init__.py      # Package exports
 │   ├── main.py          # CLI entry point
-│   ├── config.py        # Configuration management
-│   ├── tts.py           # Text-to-Speech (MeloTTS)
+│   ├── server.py        # WebSocket server (FastAPI)
+│   ├── session.py       # Session manager
+│   ├── protocol.py      # WebSocket message types
+│   ├── config.py        # Configuration (Pydantic)
 │   ├── stt.py           # Speech-to-Text (Whisper)
-│   ├── agent/           # Agent backend abstraction
-│   ├── sandbox.py        # Sandbox workspace + opencode.json
-│   └── session.py        # WebSocket session manager
-├── pyproject.toml       # Python project config
-├── flake.nix            # Nix development environment
-├── PROJECT_STATE.md     # Implementation roadmap
-├── AGENTS.md            # AI assistant context
-└── README.md            # This file
+│   ├── tts.py           # Text-to-Speech (MeloTTS)
+│   ├── audio.py         # Audio format conversion
+│   ├── agent/           # Agent backends (OpenCode, mock)
+│   ├── space/           # Space management
+│   ├── mcp/             # MCP server management
+│   └── client/          # Test clients
+├── pyproject.toml
+├── flake.nix
+└── PROJECT_STATE.md     # Implementation roadmap
 ```
 
-### Running Module Tests
+## WebSocket Protocol
 
-```bash
-# Test TTS module directly
-python -m agentil_agent.tts
+For building custom clients, see [CLIENT_INTEGRATION.md](./CLIENT_INTEGRATION.md).
 
-# Test STT module directly
-python -m agentil_agent.stt
+### Quick Protocol Overview
 
-# Test configured agent backend
-agentil-agent test-agent
+**Connect:** `ws://host:port/ws?token=<token>`
+
+**Send text:**
+```json
+{"type": "text", "content": "Hello"}
 ```
 
-## Roadmap
-
-- [x] Phase 1: Project Setup & Foundation
-- [x] Phase 2: OpenCode Integration
-- [x] Phase 3: Voice Controller
-- [ ] Phase 4: Sandbox Mode & Voice-Assistant Agent (current)
-- [ ] Phase 5: Web Interface
-- [ ] Phase 6: Polish & UX
-- [ ] Phase 7: Documentation & Release
-
-### Future Improvements
-
-- Wake word detection (hands-free activation)
-- Audio ducking (lower TTS during listening)
-- Voice commands for agent switching
-- Home server deployment with web UI
+**Receive response (streaming):**
+```json
+{"type": "response_start"}
+{"type": "response_delta", "content": "Hi "}
+{"type": "response_delta", "content": "there!"}
+{"type": "response_end"}
+```
 
 ## License
 

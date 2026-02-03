@@ -7,9 +7,13 @@ enabling dependency injection and pluggable agent backends.
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .types import AgentSession, AgentResponse
+
+if TYPE_CHECKING:
+    from ..space import BaseSpace
+    from ..mcp import MCPManager
 
 
 class BaseAgent(ABC):
@@ -56,6 +60,39 @@ class BaseAgent(ABC):
 
         This method should be idempotent - calling it multiple times
         should be safe.
+        """
+        pass
+
+    @abstractmethod
+    def set_space(self, space: "BaseSpace", mcp_manager: "MCPManager | None" = None) -> None:
+        """
+        Set the space this agent operates in.
+
+        This is the primary dependency injection point for spaces. Agent
+        implementations should:
+        - Update their working directory appropriately (space.path for project
+          root where config files live, or space.workspace_path for isolated
+          file operations)
+        - Create any agent-specific config files (e.g., opencode.json)
+        - Configure MCP servers based on space.get_enabled_mcps()
+
+        This may be called multiple times to switch spaces without
+        restarting the agent.
+
+        Args:
+            space: The space to operate in
+            mcp_manager: Optional MCP manager for resolving MCP server info
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def space(self) -> "BaseSpace | None":
+        """
+        Return the current space, or None if not set.
+
+        Returns:
+            Current BaseSpace instance or None
         """
         pass
 

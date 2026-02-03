@@ -32,8 +32,9 @@ from .protocol import (
     TextMessage,
     parse_client_message,
 )
-from .sandbox import ensure_sandbox
 from .session import SessionManager
+from .space import SpaceManager
+from .mcp import MCPManager
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +50,20 @@ __version__ = "0.3.0"
 class AppState:
     """Application state container."""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        space_manager: SpaceManager | None = None,
+        mcp_manager: MCPManager | None = None,
+    ) -> None:
         self.config = config
-        self.session_manager = SessionManager(config)
+        self.space_manager = space_manager
+        self.mcp_manager = mcp_manager
+        self.session_manager = SessionManager(
+            config,
+            space_manager=space_manager,
+            mcp_manager=mcp_manager,
+        )
         self.token = config.ensure_token()
 
 
@@ -76,17 +88,37 @@ async def lifespan(app: FastAPI):
     global _app_state
 
     config = get_config()
-    _app_state = AppState(config)
+
+    # Initialize managers if enabled
+    space_manager: SpaceManager | None = None
+    mcp_manager: MCPManager | None = None
+
+    if config.spaces.auto_initialize:
+        logger.info(f"Initializing SpaceManager at {config.get_spaces_root()}")
+        space_manager = SpaceManager(
+            spaces_root=config.get_spaces_root(),
+            default_space_type=config.spaces.default_space_type,
+        )
+        await space_manager.initialize()
+        logger.info(f"SpaceManager initialized with {len(space_manager.list_spaces())} spaces")
+
+    if config.mcp.auto_initialize:
+        logger.info(f"Initializing MCPManager at {config.get_mcp_base_path()}")
+        mcp_manager = MCPManager(base_path=config.get_mcp_base_path())
+        await mcp_manager.initialize()
+        logger.info(f"MCPManager initialized with {len(mcp_manager.list_servers())} servers")
+
+    _app_state = AppState(
+        config,
+        space_manager=space_manager,
+        mcp_manager=mcp_manager,
+    )
 
     logger.info(f"Agentil Agent Server v{__version__} starting...")
     logger.info(f"Server: {config.server.host}:{config.server.port}")
-    logger.info(f"OpenCode: {config.agent.opencode.host}:{config.agent.opencode.port}")
+    logger.info(f"OpenCode: {config.agent.opencode.host}:{config.agent.opencode.base_port}-{config.agent.opencode.base_port + config.agent.opencode.max_servers - 1}")
     logger.info(f"Working directory: {config.get_working_dir()}")
     logger.info(f"Auth token: {_app_state.token[:8]}...")
-
-    # Ensure sandbox is initialized (creates directory + opencode.json)
-    sandbox_path = ensure_sandbox(config)
-    logger.info(f"Sandbox initialized: {sandbox_path}")
 
     yield
 
@@ -94,6 +126,18 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down...")
     if _app_state:
         await _app_state.session_manager.close_session()
+        # The session manager's session holds the agent which has the server pool
+        # Servers in the pool are not stopped by normal shutdown - we need to stop them explicitly
+        # This is handled by the session close which calls agent.shutdown()
+
+    # Shutdown managers
+    if mcp_manager:
+        await mcp_manager.shutdown()
+        logger.info("MCPManager shutdown complete")
+
+    if space_manager:
+        await space_manager.shutdown()
+        logger.info("SpaceManager shutdown complete")
 
 
 # =============================================================================
@@ -164,11 +208,14 @@ async def health_check() -> dict[str, Any]:
 async def server_info() -> dict[str, Any]:
     """Get server information."""
     state = get_app_state()
+    opencode_cfg = state.config.agent.opencode
     return {
         "version": __version__,
         "opencode": {
-            "host": state.config.agent.opencode.host,
-            "port": state.config.agent.opencode.port,
+            "host": opencode_cfg.host,
+            "base_port": opencode_cfg.base_port,
+            "max_servers": opencode_cfg.max_servers,
+            "port_range": f"{opencode_cfg.base_port}-{opencode_cfg.base_port + opencode_cfg.max_servers - 1}",
         },
         "stt": {
             "model": state.config.stt.model,
@@ -243,6 +290,9 @@ async def websocket_endpoint(
             server_version=__version__,
         )
     )
+
+    # Send initial session state (spaces, MCPs, settings)
+    asyncio.create_task(session.send_initial_state())
 
     try:
         while True:

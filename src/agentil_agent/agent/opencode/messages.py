@@ -46,17 +46,29 @@ class MessageManager:
             base_url: Base URL for OpenCode server
             timeout: Default timeout for message operations
         """
-        self.base_url = base_url
+        self._base_url = base_url
         self.timeout = timeout
         self._client: httpx.Client | None = None
         self._async_client: httpx.AsyncClient | None = None
+
+    @property
+    def base_url(self) -> str:
+        """Current base URL."""
+        return self._base_url
+
+    @base_url.setter
+    def base_url(self, value: str) -> None:
+        """Set a new base URL, closing existing clients."""
+        if value != self._base_url:
+            self.close()
+            self._base_url = value
 
     @property
     def client(self) -> httpx.Client:
         """Get or create synchronous HTTP client."""
         if self._client is None or self._client.is_closed:
             self._client = httpx.Client(
-                base_url=self.base_url,
+                base_url=self._base_url,
                 timeout=httpx.Timeout(self.timeout, connect=10.0),
             )
         return self._client
@@ -66,7 +78,7 @@ class MessageManager:
         """Get or create async HTTP client."""
         if self._async_client is None or self._async_client.is_closed:
             self._async_client = httpx.AsyncClient(
-                base_url=self.base_url,
+                base_url=self._base_url,
                 timeout=httpx.Timeout(self.timeout, connect=10.0),
             )
         return self._async_client

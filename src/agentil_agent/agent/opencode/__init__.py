@@ -16,6 +16,7 @@ from .exceptions import (
 )
 from .messages import Message, MessageManager
 from .server import ServerManager
+from .server_pool import ServerPool, ServerInstance, PortAllocation
 from .session import Session, SessionManager
 from .streaming import StreamManager
 
@@ -26,6 +27,7 @@ __all__ = [
     # Managers
     "ConnectionManager",
     "ServerManager",
+    "ServerPool",
     "SessionManager",
     "MessageManager",
     "StreamManager",
@@ -34,6 +36,8 @@ __all__ = [
     "Message",
     "MessagePart",
     "SSEEvent",
+    "ServerInstance",
+    "PortAllocation",
     # Types
     "ConnectionState",
     "EventType",

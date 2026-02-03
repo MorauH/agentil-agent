@@ -35,8 +35,18 @@ class StreamManager:
             base_url: Base URL for OpenCode server
             timeout: Timeout for requests
         """
-        self.base_url = base_url
+        self._base_url = base_url
         self.timeout = timeout
+
+    @property
+    def base_url(self) -> str:
+        """Current base URL."""
+        return self._base_url
+
+    @base_url.setter
+    def base_url(self, value: str) -> None:
+        """Set a new base URL."""
+        self._base_url = value
 
     async def subscribe_events(
         self,

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from os import wait
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
@@ -16,7 +15,8 @@ import numpy as np
 
 from .audio import AudioBuffer, decode_audio_to_pcm, encode_audio, split_text_into_sentences
 from .agent import BaseAgent, create_agent
-from .space import BaseSpace, create_space
+from .space import BaseSpace, SpaceManager, SpaceInfo as SpaceInfoInternal, DEFAULT_SPACE_ID
+from .mcp import MCPManager, MCPServerInfo
 from .config import Config
 from .protocol import (
     SpaceInfo,
@@ -35,6 +35,7 @@ from .protocol import (
     StatusMessage,
     TranscriptMessage,
     ConfigMessage,
+    OperationProgressMessage,
 )
 from .stt import STTEngine
 from .tts import TTSEngine
@@ -68,6 +69,8 @@ class Session:
         send_message: MessageSender,
         send_binary: BinarySender,
         session_id: str,
+        space_manager: SpaceManager | None = None,
+        mcp_manager: MCPManager | None = None,
     ) -> None:
         """
         Initialize a voice session.
@@ -77,11 +80,17 @@ class Session:
             send_message: Callback to send JSON messages to client
             send_binary: Callback to send binary data to client
             session_id: Unique session identifier
+            space_manager: Optional SpaceManager for space management
+            mcp_manager: Optional MCPManager for MCP server management
         """
         self.config = config
         self.session_id = session_id
         self._send_message = send_message
         self._send_binary = send_binary
+
+        # Managers (optional for backward compatibility)
+        self._space_manager = space_manager
+        self._mcp_manager = mcp_manager
 
         # State
         self._state = SessionState.IDLE
@@ -96,7 +105,7 @@ class Session:
         # Components (lazy loaded)
         self._stt_engine: STTEngine | None = None
         self._tts_engine: TTSEngine | None = None
-        # TODO: self._space: BaseSpace | None = None
+        self._current_space: BaseSpace | None = None
         self._agent: BaseAgent | None = None
         self._agent_session_id: str | None = None
 
@@ -130,6 +139,83 @@ class Session:
     def stt_enabled(self, value: bool) -> None:
         self._stt_enabled = value
 
+    @property
+    def current_space(self) -> BaseSpace | None:
+        """Current active space."""
+        return self._current_space
+
+    # =========================================================================
+    # Space Management
+    # =========================================================================
+
+    async def switch_space(self, space_id: str) -> None:
+        """
+        Switch to a different space.
+
+        With the ServerPool architecture, each space has its own OpenCode server.
+        Switching spaces updates the agent's space and reconnects to the appropriate
+        server (starting one if needed).
+
+        Args:
+            space_id: ID of the space to switch to
+
+        Raises:
+            ValueError: If SpaceManager is not available
+            SpaceError: If space doesn't exist
+        """
+        if self._space_manager is None:
+            raise ValueError("SpaceManager not available")
+
+        logger.info(f"Switching to space: {space_id}")
+
+        # Get the new space (initializes it if needed)
+        new_space = await self._space_manager.get_space(space_id)
+
+        # If same space, just clear history
+        if self._current_space and self._current_space.space_id == space_id:
+            logger.info(f"Already in space '{space_id}', just clearing history")
+            await self._clear_history()
+            return
+
+        old_space_id = self._current_space.space_id if self._current_space else None
+
+        # Update current space
+        self._current_space = new_space
+
+        # If agent exists, update its space and reinitialize
+        # The ServerPool will handle connecting to the right server
+        if self._agent:
+            logger.info(f"Updating agent to use space '{space_id}'...")
+            self._agent.set_space(new_space, self._mcp_manager)
+            # Re-initialize to connect to the correct server
+            # This will switch servers without full shutdown
+            await self._agent.initialize()
+            # Clear session ID since we're on a new server/space
+            self._agent_session_id = None
+
+        logger.info(f"Switched from space '{old_space_id}' to '{space_id}'")
+
+    async def _ensure_space(self) -> BaseSpace | None:
+        """
+        Ensure a space is loaded.
+
+        If no space is currently active and a SpaceManager is available,
+        loads the default space.
+
+        Returns:
+            Current space or None if SpaceManager not available
+        """
+        if self._current_space is not None:
+            return self._current_space
+
+        if self._space_manager is None:
+            return None
+
+        # Load default space
+        self._current_space = await self._space_manager.get_default_space()
+        logger.info(f"Loaded default space: {self._current_space.space_id}")
+        return self._current_space
+
     # =========================================================================
     # Component Access (Lazy Loading)
     # =========================================================================
@@ -153,11 +239,26 @@ class Session:
         return self._tts_engine
 
     async def _ensure_agent_session(self) -> tuple[BaseAgent, str]:
-        """Get or create the backend agent + its conversation session."""
+        """
+        Get or create the backend agent + its conversation session.
+
+        Ensures the space is configured BEFORE initializing the agent,
+        so the OpenCode server starts in the correct directory.
+        """
+        is_new_agent = self._agent is None
+
         if self._agent is None:
             logger.info(f"Creating agent backend: {self.config.agent.type}")
             self._agent = create_agent(self.config.agent.type, self.config)
 
+        # Ensure space is loaded BEFORE initialization
+        # This is critical because OpenCode server binds to its working directory at startup
+        space = await self._ensure_space()
+        if space is not None and (is_new_agent or self._agent.space != space):
+            self._agent.set_space(space, self._mcp_manager)
+            logger.info(f"Agent configured with space: {space.space_id}")
+
+        # Initialize after space is set (starts OpenCode server in correct directory)
         await self._agent.initialize()
 
         if self._agent_session_id is None:
@@ -176,37 +277,127 @@ class Session:
             self._state = state
             await self._send_message(StatusMessage(state=state))
 
+    async def send_initial_state(self) -> None:
+        """
+        Send initial session state to client on connect.
+
+        This sends available spaces, MCP servers, and current settings
+        without requiring the agent to be initialized.
+        """
+        try:
+            # Gather available spaces from SpaceManager
+            available_spaces: list[SpaceInfo] = []
+            current_space_id: str | None = None
+
+            if self._space_manager:
+                for space_info in self._space_manager.list_spaces():
+                    available_spaces.append(
+                        SpaceInfo(
+                            id=space_info.space_id,
+                            name=space_info.name,
+                            description=space_info.description,
+                        )
+                    )
+
+            # Load default space if not already set
+            if self._current_space is None and self._space_manager:
+                self._current_space = await self._space_manager.get_default_space()
+                logger.info(f"Loaded default space on connect: {self._current_space.space_id}")
+
+            if self._current_space:
+                current_space_id = self._current_space.space_id
+
+            # Gather MCP servers from MCPManager
+            mcp_servers: list[MCPInfo] = []
+            if self._mcp_manager:
+                # Get enabled MCPs from current space
+                enabled_mcps: set[str] = set()
+                if self._current_space:
+                    enabled_mcps = set(self._current_space.get_enabled_mcps())
+
+                for server_info in self._mcp_manager.list_servers():
+                    mcp_servers.append(
+                        MCPInfo(
+                            name=server_info.id,
+                            version=server_info.version,
+                            enabled=server_info.id in enabled_mcps,
+                            description=server_info.description,
+                        )
+                    )
+
+            await self._send_message(
+                SessionUpdateMessage(
+                    available_spaces=available_spaces,
+                    current_space_id=current_space_id,
+                    mcp_servers=mcp_servers,
+                    tts_enabled=self._tts_enabled,
+                    stt_enabled=self._stt_enabled,
+                )
+            )
+            logger.info(f"Sent initial state: {len(available_spaces)} spaces, {len(mcp_servers)} MCPs")
+        except Exception as e:
+            logger.exception(f"Error sending initial state: {e}")
+
 
     async def _send_session_update(self) -> None:
         """Send current session state to client."""
         try:
             agent, session_id = await self._ensure_agent_session()
 
-            # Gather
-            available_spaces = [{"id": "user", "name": "home"}]
-            mcp_servers = []
+            # Gather available spaces from SpaceManager
+            available_spaces: list[SpaceInfo] = []
+            if self._space_manager:
+                for space_info in self._space_manager.list_spaces():
+                    available_spaces.append(
+                        SpaceInfo(
+                            id=space_info.space_id,
+                            name=space_info.name,
+                            description=space_info.description,
+                        )
+                    )
+
+            # Gather MCP servers from MCPManager
+            mcp_servers: list[MCPInfo] = []
+            if self._mcp_manager:
+                # Get enabled MCPs from current space
+                enabled_mcps: set[str] = set()
+                if self._current_space:
+                    enabled_mcps = set(self._current_space.get_enabled_mcps())
+
+                for server_info in self._mcp_manager.list_servers():
+                    mcp_servers.append(
+                        MCPInfo(
+                            name=server_info.id,
+                            version=server_info.version,
+                            enabled=server_info.id in enabled_mcps,
+                            description=server_info.description,
+                        )
+                    )
 
             await self._send_message(
                 SessionUpdateMessage(
-                    available_spaces=[
-                        SpaceInfo(
-                            id = s["id"],
-                            name = s["name"]
-                        )
-                        for s in available_spaces
-                    ],
-                    mcp_servers=[],
+                    available_spaces=available_spaces,
+                    current_space_id=self._current_space.space_id if self._current_space else None,
+                    mcp_servers=mcp_servers,
                     tts_enabled=self._tts_enabled,
-                    stt_enabled=self._stt_enabled
+                    stt_enabled=self._stt_enabled,
                 )
             )
         except Exception as e:
             logger.exception(f"Error sending session update: {e}")
 
-    async def process_config(self, config: ConfigMessage):
-        logger.info(f"Received session config")
-        
-        # Audio
+    async def process_config(self, config: ConfigMessage) -> None:
+        """
+        Process configuration update from client.
+
+        Handles audio settings, space switching, MCP installation, and history management.
+
+        Args:
+            config: Configuration message from client
+        """
+        logger.info("Received session config update")
+
+        # Audio settings
         if config.tts_enabled is not None:
             self.tts_enabled = config.tts_enabled
             logger.info(f"Session TTS set to: {config.tts_enabled}")
@@ -216,22 +407,141 @@ class Session:
 
         # Space management
         if config.switch_space is not None:
-            # TODO: Switch space
-            logger.exception("Requested feature not implemented")
+            try:
+                await self.switch_space(config.switch_space)
+                # Send updated session info after space switch
+                await self._send_session_update()
+            except Exception as e:
+                logger.exception(f"Failed to switch space: {e}")
+                await self._send_message(
+                    ErrorMessage(message=f"Failed to switch space: {e}", code="space_switch_error")
+                )
 
-        # MCP management
+        # MCP installation
         if config.install_mcp_url is not None:
-            # TODO: Install mcp from url
-            logger.exception("Requested feature not implemented")
-        
-        active_mcp: list[str] = config.active_mcps
-        # TODO: check agains currently active mcp's
+            await self._install_mcp_from_url(config.install_mcp_url)
 
+        # MCP activation in current space
+        if config.active_mcps:
+            await self._set_active_mcps(config.active_mcps)
+
+        # Clear conversation history
         if config.clear_history:
-            # TODO: clear history
-            logger.exception("Requested feature not implemented")
+            await self._clear_history()
 
+    async def _install_mcp_from_url(self, url: str) -> None:
+        """
+        Install an MCP server from a URL.
 
+        Sends progress updates to the client during installation.
+
+        Args:
+            url: Git URL of the MCP server to install
+        """
+        if self._mcp_manager is None:
+            await self._send_message(
+                ErrorMessage(message="MCP manager not available", code="mcp_unavailable")
+            )
+            return
+
+        try:
+            # Send starting progress
+            await self._send_message(
+                OperationProgressMessage(
+                    operation="install_mcp",
+                    target=url,
+                    status="starting",
+                    message="Cloning repository..."
+                )
+            )
+
+            # Install the MCP server
+            server_info = await self._mcp_manager.install_from_url(url)
+
+            # Send completion
+            await self._send_message(
+                OperationProgressMessage(
+                    operation="install_mcp",
+                    target=server_info.id,
+                    status="complete",
+                    message=f"Installed MCP server: {server_info.name}"
+                )
+            )
+
+            # Auto-enable in current space if space is available
+            if self._current_space:
+                enabled_mcps = self._current_space.get_enabled_mcps()
+                if server_info.id not in enabled_mcps:
+                    enabled_mcps.append(server_info.id)
+                    self._current_space.set_enabled_mcps(enabled_mcps)
+                    logger.info(f"Auto-enabled MCP '{server_info.id}' in space '{self._current_space.space_id}'")
+
+                    # Reconfigure agent with updated MCPs
+                    if self._agent:
+                        self._agent.set_space(self._current_space, self._mcp_manager)
+
+            # Send updated session info
+            await self._send_session_update()
+
+        except Exception as e:
+            logger.exception(f"Failed to install MCP from URL: {e}")
+            await self._send_message(
+                OperationProgressMessage(
+                    operation="install_mcp",
+                    target=url,
+                    status="failed",
+                    message=str(e)
+                )
+            )
+            await self._send_message(
+                ErrorMessage(message=f"Failed to install MCP: {e}", code="mcp_install_error")
+            )
+
+    async def _set_active_mcps(self, mcp_ids: list[str]) -> None:
+        """
+        Set the active MCPs for the current space.
+
+        Args:
+            mcp_ids: List of MCP server IDs to activate
+        """
+        if self._current_space is None:
+            logger.warning("No current space - cannot set active MCPs")
+            return
+
+        # Get current enabled MCPs
+        current_enabled = set(self._current_space.get_enabled_mcps())
+        new_enabled = set(mcp_ids)
+
+        if current_enabled == new_enabled:
+            logger.debug("MCP configuration unchanged")
+            return
+
+        # Update space configuration
+        self._current_space.set_enabled_mcps(mcp_ids)
+        logger.info(f"Updated active MCPs for space '{self._current_space.space_id}': {mcp_ids}")
+
+        # Reconfigure agent with updated MCPs
+        if self._agent:
+            self._agent.set_space(self._current_space, self._mcp_manager)
+
+        # Send updated session info
+        await self._send_session_update()
+
+    async def _clear_history(self) -> None:
+        """
+        Clear the conversation history.
+
+        Creates a new agent session, effectively starting a fresh conversation.
+        """
+        if self._agent and self._agent_session_id:
+            try:
+                await self._agent.abort_session(self._agent_session_id)
+            except Exception:
+                pass
+
+        # Clear the session ID to force creation of a new session
+        self._agent_session_id = None
+        logger.info("Conversation history cleared")
 
 
     # =========================================================================
@@ -520,14 +830,23 @@ class SessionManager:
     a singleton-like interface.
     """
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        space_manager: SpaceManager | None = None,
+        mcp_manager: MCPManager | None = None,
+    ) -> None:
         """
         Initialize the session manager.
 
         Args:
             config: Server configuration
+            space_manager: Optional SpaceManager for space management
+            mcp_manager: Optional MCPManager for MCP server management
         """
         self.config = config
+        self._space_manager = space_manager
+        self._mcp_manager = mcp_manager
         self._session: Session | None = None
         self._lock = asyncio.Lock()
 
@@ -555,6 +874,8 @@ class SessionManager:
                     send_message=send_message,
                     send_binary=send_binary,
                     session_id=session_id,
+                    space_manager=self._space_manager,
+                    mcp_manager=self._mcp_manager,
                 )
                 logger.info(f"Created new session: {session_id}")
             else:

@@ -2,7 +2,7 @@
 
 This file tracks the implementation progress and serves as a guide for incremental development.
 
-## Current Phase: 5 - WebSocket Server Architecture
+## Current Phase: 7 - Space & MCP Management
 
 ## Project Overview
 
@@ -11,6 +11,8 @@ Agentil Agent is a **voice server** for OpenCode, providing:
 - **Text-to-Speech (TTS)** via MeloTTS for spoken responses
 - **WebSocket API** for bidirectional streaming with any client
 - **Flexible I/O** - Clients can mix text/audio input and receive both text/audio output
+- **Space Management** - Project-based workspaces with isolated configurations
+- **MCP Server Management** - Install and configure MCP servers per-space
 
 The server is **client-agnostic** - designed to work with:
 - Flutter PWA (primary target)
@@ -23,7 +25,7 @@ The server is **client-agnostic** - designed to work with:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Agentil Agent Server (Python)                       │
+│                         Agentil Agent Server (Python)                        │
 │                                                                              │
 │  ┌──────────────┐     ┌──────────────┐     ┌──────────────────────────────┐ │
 │  │  WebSocket   │     │   Session    │     │      Agent Backend           │ │
@@ -35,9 +37,14 @@ The server is **client-agnostic** - designed to work with:
 │         │                    │                    │                         │
 │         ▼                    ▼                    ▼                         │
 │    ┌─────────┐        ┌───────────┐        ┌──────────┐                    │
-│    │   STT   │        │  Message  │        │   TTS    │                    │
-│    │(Whisper)│        │  Router   │        │(MeloTTS) │                    │
-│    └─────────┘        └───────────┘        └──────────┘                    │
+│    │   STT   │        │   Space   │        │   TTS    │                    │
+│    │(Whisper)│        │  Manager  │        │(MeloTTS) │                    │
+│    └─────────┘        └─────┬─────┘        └──────────┘                    │
+│                             │                                               │
+│                       ┌─────┴─────┐                                        │
+│                       │    MCP    │                                        │
+│                       │  Manager  │                                        │
+│                       └───────────┘                                        │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
          ▲                                                    │
@@ -46,12 +53,14 @@ The server is **client-agnostic** - designed to work with:
          │   │  • Audio chunks (webm/opus)                 │  │
          │   │  • Text messages                            │  │
          │   │  • Control commands                         │  │
+         │   │  • Space/MCP management                     │  │
          └───┴─────────────────────────────────────────────┴──┘
                                     │
          ┌──────────────────────────┴──────────────────────────┐
          │   │  • Transcripts (streaming)                      │
          │   │  • AI Response text (streaming)                 │
          │   │  • TTS Audio chunks (streaming)                 │
+         │   │  • Session updates (spaces, MCPs)               │
          │   │  • Status/events                                │
          └───┴─────────────────────────────────────────────────┘
                                     │
@@ -63,6 +72,64 @@ The server is **client-agnostic** - designed to work with:
                         │   - etc.              │
                         └───────────────────────┘
 ```
+
+### Space & MCP Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                           Space Concept                              │
+│                                                                      │
+│  ┌─────────────────┐      ┌─────────────────┐                       │
+│  │  SpaceManager   │      │   MCPManager    │                       │
+│  │  (System-level) │      │  (System-level) │                       │
+│  │                 │      │                 │                       │
+│  │ • List spaces   │      │ • Install MCPs  │                       │
+│  │ • Create/delete │      │ • Track servers │                       │
+│  │ • Get space     │      │ • Build w/ Nix  │                       │
+│  └────────┬────────┘      └────────┬────────┘                       │
+│           │                        │                                 │
+│           ▼                        ▼                                 │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                        Session                               │    │
+│  │                                                              │    │
+│  │  current_space ──────┐                                       │    │
+│  │                      ▼                                       │    │
+│  │              ┌──────────────┐                                │    │
+│  │              │    Space     │                                │    │
+│  │              │  (instance)  │                                │    │
+│  │              │              │                                │    │
+│  │              │ • workspace/ │  ◀── Agent working directory   │    │
+│  │              │ • space.toml │  ◀── Space configuration       │    │
+│  │              │ • enabled    │                                │    │
+│  │              │   MCPs list  │  ◀── Which MCPs active here    │    │
+│  │              └──────┬───────┘                                │    │
+│  │                     │                                        │    │
+│  │                     ▼                                        │    │
+│  │              ┌──────────────┐                                │    │
+│  │              │    Agent     │                                │    │
+│  │              │  (OpenCode)  │                                │    │
+│  │              │              │                                │    │
+│  │              │ set_space()  │  ◀── Injects space context     │    │
+│  │              │ writes       │                                │    │
+│  │              │ opencode.json│  ◀── MCP config for OpenCode   │    │
+│  │              └──────────────┘                                │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Design Decisions
+
+1. **Spaces are project workspaces** - Each space has its own:
+   - Working directory (`<space-root>/workspace/`)
+   - Configuration file (`<space-root>/space.toml`)
+   - Enabled MCP list (which MCPs are active in this space)
+
+2. **MCP Manager is system-level** - MCPs are installed once and can be enabled/disabled per-space
+
+3. **Agent receives space via setter** - `agent.set_space(space, mcp_manager)` allows context switching without agent restart
+
+4. **Space switching clears history** - Creates new agent session (fresh conversation)
 
 ### Flexible I/O Modes
 
@@ -92,12 +159,50 @@ The **client decides** what to send and what to consume. Server always provides 
 
 // Control commands
 {"type": "cancel"}
-{"type": "config", "tts_enabled": true, "stt_enabled": true}
+{"type": "ping"}
+
+// Configuration
+{
+  "type": "config",
+  "tts_enabled": true,
+  "stt_enabled": true,
+  "switch_space": "project-1",        // Switch to different space
+  "install_mcp_url": "https://...",   // Install MCP from git URL
+  "active_mcps": ["mcp-1", "mcp-2"],  // Set active MCPs for space
+  "clear_history": true               // Clear conversation history
+}
 ```
 
 #### Server → Client Messages
 
 ```json
+// Connection established
+{"type": "connected", "session_id": "...", "server_version": "..."}
+
+// Session state update (sent on connect and after changes)
+{
+  "type": "session_update",
+  "available_spaces": [
+    {"id": "default", "name": "Default", "description": "..."}
+  ],
+  "current_space_id": "default",
+  "mcp_servers": [
+    {"name": "rag-mcp", "version": "1.0", "enabled": true, "description": "..."}
+  ],
+  "tts_enabled": true,
+  "stt_enabled": true
+}
+
+// Operation progress (MCP install, space init)
+{
+  "type": "operation_progress",
+  "operation": "install_mcp",
+  "target": "rag-mcp",
+  "status": "in_progress",  // starting, in_progress, complete, failed
+  "progress": 50,
+  "message": "Building with nix..."
+}
+
 // Transcription from STT (streaming)
 {"type": "transcript", "content": "Hello help me", "final": false}
 {"type": "transcript", "content": "Hello, help me with...", "final": true}
@@ -109,17 +214,13 @@ The **client decides** what to send and what to consume. Server always provides 
 {"type": "response_end"}
 
 // TTS Audio (streaming, one chunk per sentence)
-{"type": "audio_start", "format": "mp3", "sentence": "Sure, I can help with that."}
-// ... binary audio frame ...
-{"type": "audio_chunk"}  // signals binary follows
-{"type": "audio_end"}
+{"type": "audio_chunk", "format": "mp3", "sentence": "Sure, I can help with that."}
+// ... binary audio frame follows ...
 
 // Status and events
 {"type": "status", "state": "listening|processing|speaking|idle"}
 {"type": "error", "message": "...", "code": "..."}
-
-// Connection established
-{"type": "connected", "session_id": "...", "server_version": "..."}
+{"type": "pong"}
 ```
 
 ### Session Management
@@ -191,70 +292,111 @@ Sandbox mode remains but becomes server-side configuration:
 
 ---
 
-### Phase 5: WebSocket Server [CURRENT]
-**Status: IN PROGRESS**
+### Phase 5: WebSocket Server [COMPLETED]
+**Status: COMPLETED**
 **Goal:** Implement WebSocket server with bidirectional audio/text streaming
 
 #### 5.1 Server Foundation
-- [ ] Add FastAPI + WebSocket dependencies
-- [ ] Create WebSocket server entry point
-- [ ] Implement connection handling with token auth
-- [ ] Define message types (Pydantic models)
-- [ ] Basic health check endpoint
+- [x] Add FastAPI + WebSocket dependencies
+- [x] Create WebSocket server entry point
+- [x] Implement connection handling with token auth
+- [x] Define message types (Pydantic models)
+- [x] Basic health check endpoint
 
 #### 5.2 Session Manager
-- [ ] Create session manager (replaces controller)
-- [ ] Track connection state
-- [ ] Handle reconnection (resume session)
-- [ ] Manage conversation history
+- [x] Create session manager (replaces controller)
+- [x] Track connection state
+- [x] Handle reconnection (resume session)
+- [x] Manage conversation history
 
 #### 5.3 Text Input/Output
-- [ ] Handle text input messages
-- [ ] Stream text responses from OpenCode
-- [ ] Sentence-level buffering for TTS triggers
+- [x] Handle text input messages
+- [x] Stream text responses from OpenCode
+- [x] Sentence-level buffering for TTS triggers
 
 #### 5.4 Audio Input (STT)
-- [ ] Receive audio chunks from client
-- [ ] Buffer and decode audio (webm/opus → PCM)
-- [ ] Run Whisper transcription
-- [ ] Stream transcript updates to client
+- [x] Receive audio chunks from client
+- [x] Buffer and decode audio (webm/opus → PCM)
+- [x] Run Whisper transcription
+- [x] Stream transcript updates to client
 
 #### 5.5 Audio Output (TTS)
-- [ ] Generate TTS for each sentence
-- [ ] Encode audio for streaming (mp3 or opus)
-- [ ] Stream audio chunks to client
-- [ ] Coordinate text + audio timing
+- [x] Generate TTS for each sentence
+- [x] Encode audio for streaming (mp3 or opus)
+- [x] Stream audio chunks to client
+- [x] Coordinate text + audio timing
 
 #### 5.6 Configuration Updates
-- [ ] Add `[server]` config section (host, port, token)
-- [ ] Add audio format settings
-- [ ] Token generation/management
-
-**Exit Criteria:**
-- WebSocket server accepts connections with token auth
-- Can send text, receive streaming text + audio response
-- Can send audio, receive transcript + streaming response + audio
-- Sentence-level TTS streaming works
+- [x] Add `[server]` config section (host, port, token)
+- [x] Add audio format settings
+- [x] Token generation/management
 
 ---
 
-### Phase 6: CLI Test Client [PLANNED]
-**Status: NOT STARTED**
+### Phase 6: CLI Test Client [COMPLETED]
+**Status: COMPLETED**
 **Goal:** Simple CLI client for testing (text-in, text-out via WebSocket)
 
-- [ ] WebSocket client using `websockets` library
-- [ ] Connect with token auth
-- [ ] Send text messages
-- [ ] Display streaming responses
-- [ ] Simple REPL interface
-
-**Exit Criteria:**
-- Can test server without Flutter client
-- Validates WebSocket protocol works
+- [x] WebSocket client using `websockets` library
+- [x] Connect with token auth
+- [x] Send text messages
+- [x] Display streaming responses
+- [x] Simple REPL interface
+- [x] TTS audio playback support
+- [x] Space management commands (/spaces, /space <id>)
+- [x] MCP management commands (/mcps, /mcp on/off, /mcp install)
 
 ---
 
-### Phase 7: Polish & Production Ready [PLANNED]
+### Phase 7: Space & MCP Management [CURRENT]
+**Status: IN PROGRESS**
+**Goal:** Implement project-based workspaces with MCP server management
+
+#### 7.1 Space Infrastructure
+- [x] Create `BaseSpace` abstract class
+- [x] Implement `DirectorySpace` (filesystem-based)
+- [x] Create `SpaceManager` for managing multiple spaces
+- [x] Space configuration (`space.toml`)
+- [x] Auto-create default space on startup
+
+#### 7.2 MCP Manager
+- [x] Create `MCPManager` for system-level MCP tracking
+- [x] MCP server registry (`mcp-servers.json`)
+- [x] `install_from_url()` - Install via git + nix
+- [x] `register_local()` - Register existing executables
+- [x] Generate OpenCode-compatible MCP config
+
+#### 7.3 Agent Integration
+- [x] Add `set_space()` method to `BaseAgent`
+- [x] Implement `set_space()` in OpenCode agent
+- [x] Generate `opencode.json` with MCP and agent config
+- [x] Create mock agent for testing
+
+#### 7.4 Session Integration
+- [x] Add SpaceManager and MCPManager to Session
+- [x] Implement `switch_space()` method
+- [x] Configure agent with space on session start
+- [x] Handle space switching (clears history)
+- [x] Send `session_update` with spaces and MCPs
+
+#### 7.5 Server Integration
+- [x] Add `SpaceManagerConfig` and `MCPManagerConfig`
+- [x] Initialize managers in server lifespan
+- [x] Pass managers to SessionManager
+
+#### 7.6 Client Integration
+- [x] Update text client for new message types
+- [x] Add space and MCP commands to client
+
+#### 7.7 Remaining Work
+- [ ] End-to-end testing with real MCP servers
+- [ ] Space creation via WebSocket API
+- [ ] MCP uninstall command
+- [ ] Better progress reporting for MCP install
+
+---
+
+### Phase 8: Polish & Production Ready [PLANNED]
 **Status: NOT STARTED**
 **Goal:** Production hardening and UX improvements
 
@@ -301,8 +443,14 @@ input_format = "webm/opus"  # Expected from clients
 output_format = "mp3"       # Sent to clients
 output_sample_rate = 24000
 
-[sandbox]
-path = "~/.config/agentil-agent/workspace"
+[spaces]
+spaces_root = "~/.config/agentil-agent/spaces"
+default_space_type = "directory"
+auto_initialize = true
+
+[mcp]
+base_path = "~/.config/agentil-agent/mcp-servers"
+auto_initialize = true
 
 [assistant]
 name = "voice-assistant"
@@ -350,32 +498,73 @@ Guidelines:
 
 ---
 
-## File Structure (Planned)
+## File Structure
 
 ```
 agentil-agent/
 ├── src/agentil_agent/
 │   ├── __init__.py
+│   ├── main.py            # CLI entry point
 │   ├── server.py          # FastAPI app, WebSocket handlers
-│   ├── session.py         # Session manager (replaces controller)
+│   ├── session.py         # Session manager with space support
 │   ├── protocol.py        # WebSocket message types
-│   ├── stt.py             # STT engine (existing, minor updates)
-│   ├── tts.py             # TTS engine (existing, minor updates)
-│   ├── agent/             # Agent backend implementations
+│   ├── config.py          # Configuration (Pydantic)
+│   ├── stt.py             # STT engine (Whisper)
+│   ├── tts.py             # TTS engine (MeloTTS)
 │   ├── audio.py           # Audio format conversion utilities
-│   ├── config.py          # Configuration
-│   ├── sandbox.py         # Sandbox workspace + opencode.json
-│   └── main.py            # CLI entry point
-├── src/agentil_agent/client/
-│   └── text_client.py     # Simple CLI test client
+│   │
+│   ├── agent/             # Agent backend implementations
+│   │   ├── __init__.py    # Factory + registry
+│   │   ├── base.py        # BaseAgent abstract class
+│   │   ├── mock/          # Mock agent for testing
+│   │   │   └── agent.py
+│   │   └── opencode/      # OpenCode agent
+│   │       ├── __init__.py
+│   │       ├── agent.py   # OpenCodeAgent with set_space()
+│   │       └── client.py  # HTTP/SSE client
+│   │
+│   ├── space/             # Space management
+│   │   ├── __init__.py    # Factory + exports
+│   │   ├── base.py        # BaseSpace abstract class
+│   │   ├── config.py      # SpaceConfig model
+│   │   ├── manager.py     # SpaceManager
+│   │   ├── exceptions.py
+│   │   └── directory/     # Directory-based space impl
+│   │       ├── __init__.py
+│   │       └── space.py   # DirectorySpace
+│   │
+│   ├── mcp/               # MCP server management
+│   │   ├── __init__.py
+│   │   ├── types.py       # MCPServerInfo
+│   │   ├── manager.py     # MCPManager
+│   │   └── nix_installer.py  # Nix-based MCP builder
+│   │
+│   └── client/            # Test clients
+│       ├── __init__.py
+│       └── text_client.py # CLI text client
+│
 ├── pyproject.toml
 ├── flake.nix
-└── README.md
+├── PROJECT_STATE.md       # This file
+├── AGENTS.md              # AI assistant context
+└── README.md              # User documentation
 ```
 
 ---
 
 ## Changelog
+
+### 2025-02-03
+- **Phase 7: Space & MCP Management** implementation
+- Added SpaceManager for managing multiple project workspaces
+- Added MCPManager for system-level MCP server installation
+- Implemented space switching (clears conversation history)
+- Agent receives space context via `set_space()` method
+- OpenCode agent generates `opencode.json` with MCP config
+- Updated Session to coordinate spaces, MCPs, and agent
+- Updated text client with space and MCP commands
+- New config sections: `[spaces]`, `[mcp]`
+- New WebSocket messages: `session_update`, `operation_progress`
 
 ### 2025-01-17
 - **MAJOR ARCHITECTURE CHANGE**: Pivoting from CLI tool to WebSocket server

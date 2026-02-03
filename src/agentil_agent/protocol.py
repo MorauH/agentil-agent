@@ -151,6 +151,10 @@ class SessionUpdateMessage(BaseModel):
         default_factory=list,
         description="All available spaces for user"
     )
+    current_space_id: str | None = Field(
+        default=None,
+        description="Currently active space ID"
+    )
     mcp_servers: list[MCPInfo] = Field(
         default_factory=list,
         description="All available mcp-servers"
