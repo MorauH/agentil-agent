@@ -25,6 +25,7 @@ class SessionState(str, Enum):
     PROCESSING = "processing"  # Waiting for OpenCode response
     SPEAKING = "speaking"  # TTS is generating/streaming audio
     ERROR = "error"
+    # TODO: Add "busy" state? (loading space / installing mcp...)
 
 
 class AudioFormat(str, Enum):
@@ -35,6 +36,26 @@ class AudioFormat(str, Enum):
     MP3 = "mp3"
     WAV = "wav"
     PCM = "pcm"  # Raw 16-bit PCM, 16kHz
+
+
+# =============================================================================
+# Structs
+# =============================================================================
+
+
+class SpaceInfo(BaseModel):
+    """Space details"""
+    id: str
+    name: str
+    description: str | None = None
+
+
+class MCPInfo(BaseModel):
+    """MCP details"""
+    name: str
+    version: str | None = None
+    enabled: bool
+    description: str | None = None
 
 
 # =============================================================================
@@ -76,8 +97,20 @@ class ConfigMessage(BaseModel):
     """Runtime configuration update from client."""
 
     type: Literal["config"] = "config"
+    
+    # Audio settings
     tts_enabled: bool | None = Field(default=None, description="Enable/disable TTS output")
     stt_enabled: bool | None = Field(default=None, description="Enable/disable STT processing")
+    
+    # Space management
+    switch_space: str | None = Field(default=None, description="Space to switch to")
+
+    # MCP - management
+    install_mcp_url: str | None = Field(default=None, description="MCP to install (url)")
+    active_mcps: list[str] = Field(default=[], description="MCP's to be active in space")
+
+    # History management
+    clear_history: bool | None = Field(default=None, description="Clear conversation history")
 
 
 class PingMessage(BaseModel):
@@ -87,8 +120,14 @@ class PingMessage(BaseModel):
 
 
 # Union type for all client messages
-ClientMessage = TextMessage | AudioStartMessage | AudioEndMessage | CancelMessage | ConfigMessage | PingMessage
-
+ClientMessage = (
+    TextMessage
+    | AudioStartMessage
+    | AudioEndMessage
+    | CancelMessage
+    | ConfigMessage
+    | PingMessage
+)
 
 # =============================================================================
 # Server -> Client Messages
@@ -101,6 +140,39 @@ class ConnectedMessage(BaseModel):
     type: Literal["connected"] = "connected"
     session_id: str = Field(..., description="Session identifier")
     server_version: str = Field(..., description="Server version")
+
+
+class SessionUpdateMessage(BaseModel):
+    """Complete session update."""
+    type: Literal["session_update"] = "session_update"
+
+    # Space info
+    available_spaces: list[SpaceInfo] = Field(
+        default_factory=list,
+        description="All available spaces for user"
+    )
+    mcp_servers: list[MCPInfo] = Field(
+        default_factory=list,
+        description="All available mcp-servers"
+    )
+
+    # Audio
+    tts_enabled: bool = Field(default=True)
+    stt_enabled: bool = Field(default=True)
+
+
+class OperationProgressMessage(BaseModel):
+    """Progress update for long-running operations."""
+    type: Literal["operation_progress"] = "operation_progress"
+    operation: Literal["install_mcp", "initialize_space"] = Field(
+        ..., description="Type of operation"
+    )
+    target: str = Field(..., description="Target (e.g., mcp name)")
+    status: Literal["starting", "in_progress", "complete", "failed"] = Field(
+        ..., description="Current status"
+    )
+    progress: float | None = Field(default=None, description="Progress 0-100")
+    message: str | None = Field(default=None, description="Status message")
 
 
 class TranscriptMessage(BaseModel):
@@ -187,6 +259,8 @@ class PongMessage(BaseModel):
 # Union type for all server messages
 ServerMessage = (
     ConnectedMessage
+    | SessionUpdateMessage
+    | OperationProgressMessage
     | TranscriptMessage
     | ResponseStartMessage
     | ResponseDeltaMessage

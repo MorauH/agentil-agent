@@ -268,18 +268,6 @@ Sandbox mode remains but becomes server-side configuration:
 
 ---
 
-### Phase 8: Documentation & Release [PLANNED]
-**Status: NOT STARTED**
-**Goal:** Prepare for public release
-
-- [ ] API documentation (WebSocket protocol)
-- [ ] Server setup guide
-- [ ] Client integration guide
-- [ ] Docker deployment option
-- [ ] Example Flutter client code snippets
-
----
-
 ## Configuration
 
 ### Current Config Structure (agentil-agent.toml)

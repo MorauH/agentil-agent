@@ -317,15 +317,7 @@ async def handle_json_message(
         await session.cancel()
 
     elif isinstance(msg, ConfigMessage):
-        logger.info(
-            f"Received config: tts_enabled={msg.tts_enabled}, stt_enabled={msg.stt_enabled}"
-        )
-        if msg.tts_enabled is not None:
-            session.tts_enabled = msg.tts_enabled
-            logger.info(f"Session TTS set to: {session.tts_enabled}")
-        if msg.stt_enabled is not None:
-            session.stt_enabled = msg.stt_enabled
-        logger.info(f"Config applied: tts={session.tts_enabled}, stt={session.stt_enabled}")
+        asyncio.create_task(session.process_config(msg))
 
     elif isinstance(msg, PingMessage):
         await send_message(PongMessage())

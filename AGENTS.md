@@ -273,10 +273,6 @@ All WebSocket connections require a valid token. Token is auto-generated on firs
 
 TTS is generated per sentence to reduce latency. The `split_text_into_sentences()` function uses simple heuristics.
 
-### 5. Single-Session Mode
-
-All WebSocket connections share the same session. Reconnecting resumes the existing conversation.
-
 ## Testing
 
 ```bash

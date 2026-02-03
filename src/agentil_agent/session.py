@@ -16,8 +16,11 @@ import numpy as np
 
 from .audio import AudioBuffer, decode_audio_to_pcm, encode_audio, split_text_into_sentences
 from .agent import BaseAgent, create_agent
+from .space import BaseSpace, create_space
 from .config import Config
 from .protocol import (
+    SpaceInfo,
+    MCPInfo,
     AudioChunkMessage,
     AudioFormat,
     AudioStreamEndMessage,
@@ -28,8 +31,10 @@ from .protocol import (
     ResponseStartMessage,
     ServerMessage,
     SessionState,
+    SessionUpdateMessage,
     StatusMessage,
     TranscriptMessage,
+    ConfigMessage,
 )
 from .stt import STTEngine
 from .tts import TTSEngine
@@ -54,6 +59,7 @@ class Session:
     - Audio input → STT → Agent → Text/Audio output
     - State management
     - Streaming coordination
+    - Space management
     """
 
     def __init__(
@@ -90,6 +96,7 @@ class Session:
         # Components (lazy loaded)
         self._stt_engine: STTEngine | None = None
         self._tts_engine: TTSEngine | None = None
+        # TODO: self._space: BaseSpace | None = None
         self._agent: BaseAgent | None = None
         self._agent_session_id: str | None = None
 
@@ -168,6 +175,64 @@ class Session:
         if self._state != state:
             self._state = state
             await self._send_message(StatusMessage(state=state))
+
+
+    async def _send_session_update(self) -> None:
+        """Send current session state to client."""
+        try:
+            agent, session_id = await self._ensure_agent_session()
+
+            # Gather
+            available_spaces = [{"id": "user", "name": "home"}]
+            mcp_servers = []
+
+            await self._send_message(
+                SessionUpdateMessage(
+                    available_spaces=[
+                        SpaceInfo(
+                            id = s["id"],
+                            name = s["name"]
+                        )
+                        for s in available_spaces
+                    ],
+                    mcp_servers=[],
+                    tts_enabled=self._tts_enabled,
+                    stt_enabled=self._stt_enabled
+                )
+            )
+        except Exception as e:
+            logger.exception(f"Error sending session update: {e}")
+
+    async def process_config(self, config: ConfigMessage):
+        logger.info(f"Received session config")
+        
+        # Audio
+        if config.tts_enabled is not None:
+            self.tts_enabled = config.tts_enabled
+            logger.info(f"Session TTS set to: {config.tts_enabled}")
+        if config.stt_enabled is not None:
+            self.stt_enabled = config.stt_enabled
+            logger.info(f"Session STT set to: {config.stt_enabled}")
+
+        # Space management
+        if config.switch_space is not None:
+            # TODO: Switch space
+            logger.exception("Requested feature not implemented")
+
+        # MCP management
+        if config.install_mcp_url is not None:
+            # TODO: Install mcp from url
+            logger.exception("Requested feature not implemented")
+        
+        active_mcp: list[str] = config.active_mcps
+        # TODO: check agains currently active mcp's
+
+        if config.clear_history:
+            # TODO: clear history
+            logger.exception("Requested feature not implemented")
+
+
+
 
     # =========================================================================
     # Text Input Processing

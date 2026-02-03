@@ -25,7 +25,7 @@ def register_space_factory(factory: BaseSpaceFactory) -> None:
     Args:
         factory: Factory instance that creates spaces
     """
-    _agent_factories[factory.agent_type()] = factory
+    _space_factories[factory.space_type()] = factory
 
 
 def create_space(space_type: str, config: Any) -> BaseSpace:
@@ -33,7 +33,7 @@ def create_space(space_type: str, config: Any) -> BaseSpace:
     Create an space of the specified type.
     
     Args:
-        space_type: Type of agent to create (e.g., "nix-jail", "docker")
+        space_type: Type of space to create (e.g., "nix-jail", "docker")
         config: Configuration object for the space
         
     Returns:
@@ -46,10 +46,10 @@ def create_space(space_type: str, config: Any) -> BaseSpace:
     if not factory:
         available = ", ".join(_space_factories.keys())
         raise ValueError(
-            f"Unknown agent type: {space_type}. "
+            f"Unknown space type: {space_type}. "
             f"Available types: {available or 'none'}"
         )
-    return factory.create_agent(config)
+    return factory.create_space(config)
 
 
 def list_available_spaces() -> list[str]:
@@ -77,7 +77,7 @@ except ImportError:
 
 try:
     from .docker import DockerSpaceFactory
-    register_agent_factory(DockerSpaceFactory())
+    register_space_factory(DockerSpaceFactory())
 except ImportError:
     pass
 
