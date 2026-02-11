@@ -252,6 +252,7 @@ class SpaceManager:
         space_type: str | None = None,
         name: str | None = None,
         description: str | None = None,
+        **kwargs,
     ) -> BaseSpace:
         """
         Create a new space.
@@ -261,6 +262,8 @@ class SpaceManager:
             space_type: Type of space (default: directory)
             name: Human-readable name (default: space_id)
             description: Optional description
+            **kwargs: Additional arguments passed to the space factory
+                (e.g., workspace_link for directory spaces)
 
         Returns:
             Initialized BaseSpace instance
@@ -279,7 +282,7 @@ class SpaceManager:
         logger.info(f"Creating space '{space_id}' (type: {space_type})")
 
         # Create space using factory
-        space = factory_create_space(space_type, self._spaces_root, space_id)
+        space = factory_create_space(space_type, self._spaces_root, space_id, **kwargs)
 
         # Initialize it
         await space.initialize()

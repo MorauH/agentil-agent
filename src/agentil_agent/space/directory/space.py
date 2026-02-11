@@ -39,6 +39,7 @@ class DirectorySpace(BaseSpace):
         self,
         path: Path,
         space_id: str,
+        workspace_link: Path | None = None,
     ) -> None:
         """
         Initialize a directory space.
@@ -46,9 +47,14 @@ class DirectorySpace(BaseSpace):
         Args:
             path: Root path of the space directory
             space_id: Unique identifier for this space
+            workspace_link: Optional external path to symlink as workspace.
+                If provided, the workspace/ directory will be a symlink
+                to this path instead of a regular directory. Useful for
+                pointing a space at an existing project/repository.
         """
         self._path = path
         self._space_id = space_id
+        self._workspace_link = workspace_link
         self._config: SpaceConfig | None = None
         self._workspace: Path | None = None
         self._initialized = False
@@ -126,9 +132,31 @@ class DirectorySpace(BaseSpace):
             # Create space root directory
             self._path.mkdir(parents=True, exist_ok=True)
 
-            # Create workspace subdirectory
+            # Set up workspace: either symlink to external path or create subdirectory
             self._workspace = self._path / "workspace"
-            self._workspace.mkdir(parents=True, exist_ok=True)
+            if self._workspace_link is not None:
+                link_target = self._workspace_link.resolve()
+                if not link_target.exists():
+                    raise SpaceInitializationError(
+                        f"Workspace link target does not exist: {link_target}"
+                    )
+                # Remove existing workspace if it's not already the correct symlink
+                if self._workspace.is_symlink():
+                    if self._workspace.resolve() != link_target:
+                        self._workspace.unlink()
+                        self._workspace.symlink_to(link_target)
+                        logger.info(f"Updated workspace symlink: {self._workspace} -> {link_target}")
+                elif self._workspace.exists():
+                    # Existing regular directory — don't destroy it, raise error
+                    raise SpaceInitializationError(
+                        f"Workspace directory already exists as a regular directory. "
+                        f"Remove it manually to use workspace_link: {self._workspace}"
+                    )
+                else:
+                    self._workspace.symlink_to(link_target)
+                    logger.info(f"Created workspace symlink: {self._workspace} -> {link_target}")
+            else:
+                self._workspace.mkdir(parents=True, exist_ok=True)
 
             # Load or create configuration
             self._config = SpaceConfig.load(self._path)
@@ -203,19 +231,25 @@ class DirectorySpace(BaseSpace):
 class DirectorySpaceFactory(BaseSpaceFactory):
     """Factory for creating directory space instances."""
 
-    def create_space(self, spaces_root: Path, space_id: str) -> DirectorySpace:
+    def create_space(
+        self,
+        spaces_root: Path,
+        space_id: str,
+        workspace_link: Path | None = None,
+    ) -> DirectorySpace:
         """
         Create a directory space instance.
 
         Args:
             spaces_root: Root directory where all spaces are stored
             space_id: Unique identifier for this space (used as directory name)
+            workspace_link: Optional external path to symlink as workspace
 
         Returns:
             DirectorySpace instance (not yet initialized)
         """
         path = spaces_root / space_id
-        return DirectorySpace(path=path, space_id=space_id)
+        return DirectorySpace(path=path, space_id=space_id, workspace_link=workspace_link)
 
     def space_type(self) -> str:
         """Return the space type this factory creates."""

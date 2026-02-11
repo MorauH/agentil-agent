@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Coroutine
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Coroutine
 
 import numpy as np
 
@@ -111,6 +111,49 @@ class Session:
 
         # Locks
         self._processing_lock = asyncio.Lock()
+
+    # =========================================================================
+    # Factory Methods
+    # =========================================================================
+
+    @classmethod
+    def create_headless(
+        cls,
+        config: Config,
+        space_manager: SpaceManager | None = None,
+        mcp_manager: MCPManager | None = None,
+        session_id: str = "headless",
+    ) -> "Session":
+        """
+        Create a Session for programmatic (non-WebSocket) use.
+
+        The session is created with no-op message/binary senders,
+        making it suitable for library consumers that interact via
+        stream_text() instead of WebSocket callbacks.
+
+        Args:
+            config: Server configuration
+            space_manager: Optional SpaceManager for space management
+            mcp_manager: Optional MCPManager for MCP server management
+            session_id: Session identifier (default: "headless")
+
+        Returns:
+            A Session instance ready for programmatic use
+        """
+        async def _noop_send_message(msg: ServerMessage) -> None:
+            pass
+
+        async def _noop_send_binary(data: bytes) -> None:
+            pass
+
+        return cls(
+            config=config,
+            send_message=_noop_send_message,
+            send_binary=_noop_send_binary,
+            session_id=session_id,
+            space_manager=space_manager,
+            mcp_manager=mcp_manager,
+        )
 
     # =========================================================================
     # Properties
@@ -616,6 +659,44 @@ class Session:
                 await self._send_message(ErrorMessage(message=str(e), code="processing_error"))
             finally:
                 await self._set_state(SessionState.IDLE)
+
+    async def stream_text(self, text: str) -> AsyncGenerator[str, None]:
+        """
+        Stream a text response, yielding chunks as they arrive.
+
+        This is the programmatic equivalent of process_text() — it handles
+        the full agent lifecycle (ensure agent session, space, initialization)
+        but yields text chunks directly instead of routing through WebSocket
+        callbacks.
+
+        Intended for library consumers (e.g., CodeReport) that import
+        agentil-agent as a dependency and don't use the WebSocket server.
+
+        Args:
+            text: User's text message to send to the agent
+
+        Yields:
+            Text chunks from the agent's streaming response
+
+        Raises:
+            Exception: If agent initialization or streaming fails
+        """
+        if not text.strip():
+            return
+
+        async with self._processing_lock:
+            self._cancelled = False
+
+            logger.info(f"Streaming text: '{text[:50]}...'")
+
+            # Get or create backend agent session
+            agent, agent_session_id = await self._ensure_agent_session()
+
+            async for chunk in agent.stream_response(agent_session_id, text):
+                if self._cancelled:
+                    logger.info("Streaming cancelled")
+                    break
+                yield chunk
 
     # =========================================================================
     # Audio Input Processing

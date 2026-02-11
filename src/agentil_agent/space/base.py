@@ -191,7 +191,7 @@ class BaseSpaceFactory(ABC):
     """
 
     @abstractmethod
-    def create_space(self, spaces_root: Path, space_id: str) -> BaseSpace:
+    def create_space(self, spaces_root: Path, space_id: str, **kwargs) -> BaseSpace:
         """
         Create and return a configured space instance.
 
@@ -201,6 +201,8 @@ class BaseSpaceFactory(ABC):
                 - Used as directory name for DirectorySpace
                 - Used as container name for Docker
                 - etc.
+            **kwargs: Additional factory-specific arguments
+                (e.g., workspace_link for directory spaces)
 
         Returns:
             Configured space instance (not yet initialized)

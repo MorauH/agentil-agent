@@ -34,7 +34,7 @@ def register_space_factory(factory: BaseSpaceFactory) -> None:
     _space_factories[factory.space_type()] = factory
 
 
-def create_space(space_type: str, spaces_root: Path, space_id: str) -> BaseSpace:
+def create_space(space_type: str, spaces_root: Path, space_id: str, **kwargs) -> BaseSpace:
     """
     Create a space of the specified type.
 
@@ -42,6 +42,8 @@ def create_space(space_type: str, spaces_root: Path, space_id: str) -> BaseSpace
         space_type: Type of space to create (e.g., "directory", "docker")
         spaces_root: Root directory where spaces are stored
         space_id: Unique identifier for the space
+        **kwargs: Additional arguments passed to the space factory
+            (e.g., workspace_link for directory spaces)
 
     Returns:
         Configured space instance (not yet initialized)
@@ -56,7 +58,7 @@ def create_space(space_type: str, spaces_root: Path, space_id: str) -> BaseSpace
             f"Unknown space type: {space_type}. "
             f"Available types: {available or 'none'}"
         )
-    return factory.create_space(spaces_root, space_id)
+    return factory.create_space(spaces_root, space_id, **kwargs)
 
 
 def list_available_space_types() -> list[str]:
