@@ -197,6 +197,7 @@ Sent after connection and whenever spaces/MCPs change. Contains current session 
       "description": "Web app project"
     }
   ],
+  "current_space_id": "project-1",
   "mcp_servers": [
     {
       "name": "rag-mcp",
@@ -571,9 +572,48 @@ The server also exposes REST endpoints:
 // GET /info response
 {
   "version": "0.3.0",
-  "opencode": { "host": "127.0.0.1", "port": 4096 },
   "stt": { "model": "base" },
   "tts": { "speaker": "EN-BR", "speed": 1.2 },
   "audio": { "input_format": "webm/opus", "output_format": "mp3" }
 }
 ```
+
+## MCP Server Management
+
+MCP servers extend the assistant with additional tools (e.g., RAG, GitHub
+integration). Clients manage MCP servers through the `config` WebSocket message.
+
+### Installing an MCP Server
+
+Send a config message with `install_mcp_url` to install a new MCP server from
+a git repository:
+
+```json
+{
+  "type": "config",
+  "install_mcp_url": "https://github.com/user/my-mcp-server"
+}
+```
+
+The server sends `operation_progress` messages during installation.
+
+### Enabling/Disabling MCP Servers Per-Space
+
+Use `active_mcps` to set which installed MCP servers are enabled in the current
+space:
+
+```json
+{
+  "type": "config",
+  "active_mcps": ["rag-mcp", "github-mcp"]
+}
+```
+
+MCP servers not in the list are disabled for the current space. The server
+handles all backend registration automatically.
+
+### Viewing MCP Status
+
+The `session_update` message (sent on connect and after changes) includes the
+current MCP server list with enabled/disabled status. Use this to populate
+toggles or settings UI.
