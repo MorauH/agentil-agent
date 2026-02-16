@@ -3,6 +3,14 @@ Agentil Agent - WebSocket voice server for AI agents.
 
 Provides a WebSocket API for voice interaction with various AI agents,
 supporting STT (speech-to-text) and TTS (text-to-speech).
+
+Core imports (config, protocol, agent abstraction) are always available.
+For voice-specific components, import directly from their modules:
+
+    from agentil_agent.tts import TTSEngine
+    from agentil_agent.stt import STTEngine
+    from agentil_agent.session import Session, SessionManager
+    from agentil_agent.server import create_app, run_server
 """
 
 from .config import (
@@ -51,11 +59,6 @@ from .agent import (
     list_available_agents,
 )
 
-from .tts import TTSEngine, speak, stop
-from .stt import STTEngine
-from .session import Session, SessionManager
-from .server import create_app, run_server
-
 __version__ = "0.3.0"
 
 __all__ = [
@@ -101,16 +104,4 @@ __all__ = [
     "create_agent",
     "register_agent_factory",
     "list_available_agents",
-    # TTS
-    "TTSEngine",
-    "speak",
-    "stop",
-    # STT
-    "STTEngine",
-    # Session
-    "Session",
-    "SessionManager",
-    # Server
-    "create_app",
-    "run_server",
 ]

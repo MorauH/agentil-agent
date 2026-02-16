@@ -37,11 +37,10 @@ from .protocol import (
     ConfigMessage,
     OperationProgressMessage,
 )
-from .stt import STTEngine
-from .tts import TTSEngine
-
 if TYPE_CHECKING:
     from numpy.typing import NDArray
+    from .stt import STTEngine
+    from .tts import TTSEngine
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +265,8 @@ class Session:
     def _get_stt_engine(self) -> STTEngine:
         """Get or create STT engine."""
         if self._stt_engine is None:
+            from .stt import STTEngine
+
             logger.info(f"Loading STT engine (model: {self.config.stt.model})")
             self._stt_engine = STTEngine(model=self.config.stt.model)
         return self._stt_engine
@@ -273,6 +274,8 @@ class Session:
     def _get_tts_engine(self) -> TTSEngine:
         """Get or create TTS engine."""
         if self._tts_engine is None:
+            from .tts import TTSEngine
+
             logger.info(f"Loading TTS engine (speaker: {self.config.tts.speaker})")
             self._tts_engine = TTSEngine(
                 device=self.config.tts.device,
