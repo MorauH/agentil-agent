@@ -142,7 +142,7 @@ class OpenCodeAgent(BaseAgent):
         self._write_opencode_json()
 
         logger.info(f"OpenCode agent configured for space '{space.space_id}'")
-        logger.info(f"OpenCode working directory will be: {space.path}")
+        logger.info(f"OpenCode working directory will be: {space.workspace_path}")
 
     def _write_opencode_json(self) -> None:
         """
@@ -200,11 +200,28 @@ class OpenCodeAgent(BaseAgent):
         if default_agent:
             opencode_config["default_agent"] = default_agent
 
-        # Write to space root (not workspace)
+        # Write to space root
         opencode_json_path = space.path / "opencode.json"
         opencode_json_path.write_text(json.dumps(opencode_config, indent=2))
-
         logger.info(f"Wrote opencode.json to {opencode_json_path}")
+
+        # Create symlink in workspace so OpenCode finds the config when running there
+        workspace_link = space.workspace_path / "opencode.json"
+        if workspace_link.is_symlink():
+            workspace_link.unlink()
+        elif workspace_link.exists():
+            # Don't overwrite a real file in the user's repo
+            logger.warning(
+                f"opencode.json already exists in workspace at {workspace_link}, "
+                "not creating symlink"
+            )
+            return
+        
+        try:
+            workspace_link.symlink_to(opencode_json_path)
+            logger.info(f"Created symlink {workspace_link} -> {opencode_json_path}")
+        except OSError as e:
+            logger.warning(f"Could not create opencode.json symlink in workspace: {e}")
 
     async def _register_mcp_servers(self) -> None:
         """
@@ -274,7 +291,7 @@ class OpenCodeAgent(BaseAgent):
         if self._initialized:
             # If already initialized, check if we need to switch servers (space changed)
             if self._space and self._current_server:
-                expected_dir = Path(self._space.path).resolve()
+                expected_dir = Path(self._space.workspace_path).resolve()
                 current_dir = self._current_server.working_dir
                 
                 if expected_dir != current_dir:
@@ -300,9 +317,11 @@ class OpenCodeAgent(BaseAgent):
 
         try:
             # Get or start server for this space
+            # Use workspace_path (the actual project directory) so the agent has
+            # access to .git and other project files. opencode.json is symlinked there.
             server = self._server_pool.get_or_start_server(
                 space_id=self._space.space_id,
-                working_dir=self._space.path,
+                working_dir=self._space.workspace_path,
                 timeout=self.config.timeout,
             )
             
