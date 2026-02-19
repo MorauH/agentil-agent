@@ -96,16 +96,21 @@ class DirectorySpace(BaseSpace):
         return self._initialized
 
     def get_enabled_mcps(self) -> list[str]:
-        """Get list of MCP server IDs enabled for this space."""
+        """Get deduplicated union of MCP server IDs across all assistants."""
         if self._config is None:
             return []
-        return self._config.enabled_mcps.copy()
+        return self._config.all_enabled_mcps
 
     def set_enabled_mcps(self, mcp_ids: list[str]) -> None:
-        """Update which MCP servers are enabled for this space."""
+        """Set *every* assistant's enabled_mcps to the given list.
+
+        This is a convenience method for bulk updates.  For
+        per-assistant control, modify ``config.assistants`` directly.
+        """
         if self._config is None:
             raise SpaceNotReadyError("Space not initialized")
-        self._config.enabled_mcps = mcp_ids.copy()
+        for assistant in self._config.assistants:
+            assistant.enabled_mcps = mcp_ids.copy()
 
     def save_config(self) -> None:
         """Persist the current space configuration to disk."""

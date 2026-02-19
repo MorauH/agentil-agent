@@ -300,7 +300,6 @@ agentil-agent/
 │   └── client/          # Test clients
 ├── pyproject.toml
 ├── flake.nix
-└── PROJECT_STATE.md     # Implementation roadmap
 ```
 
 ## WebSocket Protocol

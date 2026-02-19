@@ -39,7 +39,13 @@ Guidelines:
 
 
 class AssistantConfig(BaseModel):
-    """Configuration for a single assistant within a space."""
+    """Configuration for a single assistant within a space.
+
+    Each assistant has its own tool permissions, MCP server access list,
+    and optional model override.  These are written into the agent backend's
+    configuration (e.g. ``opencode.json``) so each agent can have a
+    distinct capability set.
+    """
 
     name: str = Field(default="voice-assistant", description="Assistant name")
     description: str = Field(
@@ -58,6 +64,15 @@ class AssistantConfig(BaseModel):
         default_factory=lambda: {"read": True, "write": True, "bash": True},
         description="Tools enabled for this assistant (tool_name: enabled)",
     )
+    enabled_mcps: list[str] = Field(
+        default_factory=list,
+        description="MCP server IDs enabled for this assistant",
+    )
+    model: str | None = Field(
+        default=None,
+        description="Model identifier (e.g. 'anthropic/claude-sonnet-4'). "
+        "None means use the space or global default.",
+    )
 
 
 # =============================================================================
@@ -66,10 +81,14 @@ class AssistantConfig(BaseModel):
 
 
 class SpaceConfig(BaseModel):
-    """
-    Configuration for a single space.
-    
-    Stored in space.toml within the space directory.
+    """Configuration for a single space.
+
+    Stored in ``space.toml`` within the space directory.
+
+    MCP server access is configured **per-assistant** via
+    ``AssistantConfig.enabled_mcps``.  The convenience property
+    :pyattr:`all_enabled_mcps` returns the deduplicated union across
+    all assistants (useful for bulk registration with the agent backend).
     """
 
     # Space metadata
@@ -90,11 +109,30 @@ class SpaceConfig(BaseModel):
         description="Name of the default assistant to use",
     )
 
-    # MCP servers enabled for this space (by ID)
-    enabled_mcps: list[str] = Field(
-        default_factory=list,
-        description="MCP server IDs enabled for this space",
-    )
+    # ------------------------------------------------------------------
+    # Computed helpers
+    # ------------------------------------------------------------------
+
+    @property
+    def all_enabled_mcps(self) -> list[str]:
+        """Deduplicated union of ``enabled_mcps`` across all assistants.
+
+        Returns:
+            Ordered list of unique MCP server IDs referenced by any
+            assistant in this space.
+        """
+        seen: set[str] = set()
+        result: list[str] = []
+        for assistant in self.assistants:
+            for mcp_id in assistant.enabled_mcps:
+                if mcp_id not in seen:
+                    seen.add(mcp_id)
+                    result.append(mcp_id)
+        return result
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
 
     @classmethod
     def get_config_path(cls, space_path: Path) -> Path:
@@ -103,8 +141,11 @@ class SpaceConfig(BaseModel):
 
     @classmethod
     def load(cls, space_path: Path) -> "SpaceConfig":
-        """
-        Load configuration from space.toml in the given directory.
+        """Load configuration from space.toml in the given directory.
+
+        Includes a migration step: if the legacy top-level
+        ``enabled_mcps`` key is present it is pushed into every
+        assistant and removed from the top level.
 
         Args:
             space_path: Path to the space directory
@@ -120,6 +161,19 @@ class SpaceConfig(BaseModel):
             try:
                 with open(config_file, "rb") as f:
                     data = tomli.load(f)
+
+                # --- Migration: top-level enabled_mcps → per-assistant ---
+                legacy_mcps = data.pop("enabled_mcps", None)
+                if legacy_mcps:
+                    for asst in data.get("assistants", []):
+                        existing = asst.get("enabled_mcps", [])
+                        merged = list(dict.fromkeys(existing + legacy_mcps))
+                        asst["enabled_mcps"] = merged
+                    logger.info(
+                        "Migrated top-level enabled_mcps %s into assistants",
+                        legacy_mcps,
+                    )
+
                 return cls.model_validate(data)
             except Exception as e:
                 logger.warning(f"Failed to load {config_file}: {e}, using defaults")

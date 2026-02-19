@@ -173,10 +173,14 @@ class OpenCodeAgent(BaseAgent):
                 "tools": assistant.tools.copy(),
             }
 
-            # Add MCP tool patterns for enabled MCPs
-            for mcp_id in space.get_enabled_mcps():
+            # Add MCP tool patterns for this assistant's enabled MCPs
+            for mcp_id in assistant.enabled_mcps:
                 # Enable all tools from this MCP server
                 agent_config["tools"][f"{mcp_id}_*"] = True
+
+            # Per-assistant model override
+            if assistant.model:
+                agent_config["model"] = assistant.model
 
             agents_config[assistant.name] = agent_config
 
