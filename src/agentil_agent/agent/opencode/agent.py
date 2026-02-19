@@ -266,8 +266,13 @@ class OpenCodeAgent(BaseAgent):
                 logger.warning(f"MCP server '{mcp_id}' not found in registry, skipping")
                 continue
 
-            # Build config and register
+            # Build config and register, injecting space directory for all MCPs
             config = info.get_opencode_config(enabled=True)
+            space_env = {"SPACE_DIR": str(self._space.path)}
+            if "environment" in config:
+                config["environment"].update(space_env)
+            else:
+                config["environment"] = space_env
             try:
                 result = await self.connection.register_mcp_server(mcp_id, config)
                 status = result.get("status", "unknown")
