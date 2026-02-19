@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .types import MCPServerInfo
+from .types import MCPManifest, MCPServerInfo
 from .nix_installer import (
     delete_repo_clone,
     get_mcp_executable,
@@ -27,6 +27,35 @@ logger = logging.getLogger(__name__)
 
 # Registry filename
 MCP_REGISTRY_FILENAME = "mcp-servers.json"
+
+# Manifest filename expected in MCP server repos
+MCP_MANIFEST_FILENAME = "mcp-manifest.json"
+
+
+def _load_manifest(repo_path: Path) -> MCPManifest | None:
+    """Load ``mcp-manifest.json`` from a cloned MCP server repo.
+
+    Args:
+        repo_path: Root directory of the cloned repository.
+
+    Returns:
+        Parsed ``MCPManifest``, or ``None`` if the file does not exist
+        or cannot be parsed.
+    """
+    manifest_path = repo_path / MCP_MANIFEST_FILENAME
+    if not manifest_path.exists():
+        logger.debug("No %s found in %s", MCP_MANIFEST_FILENAME, repo_path)
+        return None
+
+    try:
+        with open(manifest_path) as f:
+            data = json.load(f)
+        manifest = MCPManifest.from_dict(data)
+        logger.info("Loaded MCP manifest from %s", manifest_path)
+        return manifest
+    except Exception as exc:
+        logger.warning("Failed to parse %s: %s", manifest_path, exc)
+        return None
 
 
 class MCPManager:
@@ -178,7 +207,9 @@ class MCPManager:
         """
         Install an MCP server from a git URL.
 
-        Clones the repository and builds using nix.
+        Clones the repository and builds using nix.  If the repo contains
+        an ``mcp-manifest.json``, its metadata is read and stored in the
+        registry alongside the server info.
 
         Args:
             url: Git repository URL
@@ -208,15 +239,25 @@ class MCPManager:
             # Extract repo name from path
             server_id = Path(repo_path).name.split("--")[0]
 
+        # Load manifest if present
+        manifest = _load_manifest(Path(repo_path))
+
+        # Manifest fields provide defaults; explicit args take priority
+        effective_name = name or (manifest.name if manifest else None) or server_id
+        effective_desc = description or (manifest.description if manifest else None)
+        effective_version = (manifest.version if manifest else None)
+
         # Create MCPServerInfo
         info = MCPServerInfo(
             id=server_id,
-            name=name or server_id,
+            name=effective_name,
             executable_path=executable_path,
-            description=description,
+            description=effective_desc,
+            version=effective_version,
             source_type="git",
             source_url=url,
             source_ref=ref,
+            manifest=manifest,
         )
 
         # Register it
@@ -232,7 +273,7 @@ class MCPManager:
 
         Deletes the existing clone directory, performs a fresh shallow clone,
         and rebuilds with nix. The registry entry is updated with the new
-        executable path.
+        executable path and manifest.
 
         Args:
             server_id: MCP server identifier
@@ -270,8 +311,22 @@ class MCPManager:
         executable_path = get_mcp_executable(repo_path)
         logger.info(f"Rebuilt executable: {executable_path}")
 
+        # Re-read manifest
+        manifest = _load_manifest(Path(repo_path))
+
         # Update the registry entry
         info.executable_path = executable_path
+        info.manifest = manifest
+
+        # Update metadata from manifest if not overridden at install time
+        if manifest:
+            if manifest.name:
+                info.name = manifest.name
+            if manifest.description:
+                info.description = manifest.description
+            if manifest.version:
+                info.version = manifest.version
+
         self._save_registry()
 
         logger.info(f"Updated MCP server '{server_id}'")
