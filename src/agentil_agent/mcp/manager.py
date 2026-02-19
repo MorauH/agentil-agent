@@ -13,7 +13,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .types import MCPServerInfo
-from .nix_installer import get_remote_repo, get_mcp_executable
+from .nix_installer import (
+    delete_repo_clone,
+    get_mcp_executable,
+    get_remote_repo,
+    update_remote_repo,
+)
 
 if TYPE_CHECKING:
     pass
@@ -221,6 +226,57 @@ class MCPManager:
         logger.info(f"Installed MCP server '{server_id}'")
         return info
 
+    async def update_server(self, server_id: str) -> MCPServerInfo:
+        """
+        Update a git-installed MCP server by re-cloning and rebuilding.
+
+        Deletes the existing clone directory, performs a fresh shallow clone,
+        and rebuilds with nix. The registry entry is updated with the new
+        executable path.
+
+        Args:
+            server_id: MCP server identifier
+
+        Returns:
+            Updated MCPServerInfo
+
+        Raises:
+            ValueError: If server not found or not a git-installed server
+            RuntimeError: If clone or build fails
+        """
+        info = self._registry.get(server_id)
+        if info is None:
+            raise ValueError(f"MCP server '{server_id}' not found")
+
+        if info.source_type != "git":
+            raise ValueError(
+                f"Cannot update MCP server '{server_id}': "
+                f"only git-installed servers can be updated (type: {info.source_type})"
+            )
+
+        if not info.source_url:
+            raise ValueError(
+                f"Cannot update MCP server '{server_id}': no source URL recorded"
+            )
+
+        ref = info.source_ref or "main"
+        logger.info(f"Updating MCP server '{server_id}' from {info.source_url} (ref: {ref})")
+
+        # Delete old clone and re-clone
+        repo_path = update_remote_repo(info.source_url, ref)
+        logger.info(f"Re-cloned to {repo_path}")
+
+        # Rebuild with nix
+        executable_path = get_mcp_executable(repo_path)
+        logger.info(f"Rebuilt executable: {executable_path}")
+
+        # Update the registry entry
+        info.executable_path = executable_path
+        self._save_registry()
+
+        logger.info(f"Updated MCP server '{server_id}'")
+        return info
+
     def register_local(
         self,
         server_id: str,
@@ -272,7 +328,7 @@ class MCPManager:
         Unregister an MCP server.
 
         Note: This does not delete the actual files, just removes it
-        from the registry.
+        from the registry. Use delete_server() for full cleanup.
 
         Args:
             server_id: MCP server identifier
@@ -287,6 +343,45 @@ class MCPManager:
         self._save_registry()
 
         logger.info(f"Unregistered MCP server '{server_id}'")
+        return True
+
+    async def delete_server(self, server_id: str, cleanup_files: bool = True) -> bool:
+        """
+        Delete an MCP server: unregister and optionally remove cloned files.
+
+        For git-installed servers, this also deletes the local clone
+        directory (the shallow clone and nix build artifacts).
+
+        Args:
+            server_id: MCP server identifier
+            cleanup_files: If True, delete the clone directory for
+                          git-installed servers. Default True.
+
+        Returns:
+            True if the server was found and deleted, False if not found.
+        """
+        info = self._registry.get(server_id)
+        if info is None:
+            return False
+
+        # Clean up clone directory for git-installed servers
+        if cleanup_files and info.source_type == "git" and info.source_url:
+            ref = info.source_ref or "main"
+            deleted = delete_repo_clone(info.source_url, ref)
+            if deleted:
+                logger.info(
+                    f"Deleted clone directory for MCP server '{server_id}'"
+                )
+            else:
+                logger.debug(
+                    f"No clone directory found for MCP server '{server_id}'"
+                )
+
+        # Remove from registry
+        del self._registry[server_id]
+        self._save_registry()
+
+        logger.info(f"Deleted MCP server '{server_id}'")
         return True
 
     def get_opencode_mcp_config(

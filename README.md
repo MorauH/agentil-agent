@@ -9,7 +9,7 @@ WebSocket voice server for [OpenCode](https://opencode.ai) - enables speech-base
 - **Text-to-Speech (TTS)** - MeloTTS for natural voice output
 - **Flexible I/O** - Clients can send text OR audio, receive BOTH text AND audio
 - **Space Management** - Project-based workspaces with isolated configurations
-- **MCP Server Management** - Install and configure MCP servers per-space
+- **MCP Server Management** - Install, update, and delete MCP servers per-space
 
 ## Requirements
 

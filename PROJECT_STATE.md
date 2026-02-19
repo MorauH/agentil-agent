@@ -12,7 +12,7 @@ Agentil Agent is a **voice server** for OpenCode, providing:
 - **WebSocket API** for bidirectional streaming with any client
 - **Flexible I/O** - Clients can mix text/audio input and receive both text/audio output
 - **Space Management** - Project-based workspaces with isolated configurations
-- **MCP Server Management** - Install and configure MCP servers per-space
+- **MCP Server Management** - Install, update, and delete MCP servers per-space
 
 The server is **client-agnostic** - designed to work with:
 - Flutter PWA (primary target)
@@ -84,8 +84,10 @@ The server is **client-agnostic** - designed to work with:
 │  │  (System-level) │      │  (System-level) │                       │
 │  │                 │      │                 │                       │
 │  │ • List spaces   │      │ • Install MCPs  │                       │
-│  │ • Create/delete │      │ • Track servers │                       │
-│  │ • Get space     │      │ • Build w/ Nix  │                       │
+│  │ • Create/delete │      │ • Update MCPs   │                       │
+│  │ • Get space     │      │ • Delete MCPs   │                       │
+│  │                 │      │ • Track servers │                       │
+│  │                 │      │ • Build w/ Nix  │                       │
 │  └────────┬────────┘      └────────┬────────┘                       │
 │           │                        │                                 │
 │           ▼                        ▼                                 │
@@ -364,6 +366,8 @@ Sandbox mode remains but becomes server-side configuration:
 - [x] MCP server registry (`mcp-servers.json`)
 - [x] `install_from_url()` - Install via git + nix
 - [x] `register_local()` - Register existing executables
+- [x] `update_server()` - Re-clone and rebuild git-installed MCP servers
+- [x] `delete_server()` - Unregister and optionally delete clone directory
 - [x] Generate OpenCode-compatible MCP config
 
 #### 7.3 Agent Integration
@@ -391,7 +395,7 @@ Sandbox mode remains but becomes server-side configuration:
 #### 7.7 Remaining Work
 - [ ] End-to-end testing with real MCP servers
 - [ ] Space creation via WebSocket API
-- [ ] MCP uninstall command
+- [x] MCP uninstall/delete command
 - [ ] Better progress reporting for MCP install
 
 ---
@@ -553,6 +557,14 @@ agentil-agent/
 ---
 
 ## Changelog
+
+### 2026-02-19
+- **MCP Manager: update & delete support**
+- Added `update_server()` to MCPManager — re-clones and rebuilds git-installed MCP servers
+- Added `delete_server()` to MCPManager — unregisters and optionally removes clone directory
+- Added `get_clone_dir()`, `update_remote_repo()`, `delete_repo_clone()` helpers in nix_installer
+- Extracted `_parse_repo_name()` helper, refactored `get_remote_repo()` to use `get_clone_dir()`
+- Exported new functions from `mcp/__init__.py`
 
 ### 2025-02-03
 - **Phase 7: Space & MCP Management** implementation

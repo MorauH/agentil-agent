@@ -191,7 +191,7 @@ class OpenCodeAgent(BaseAgent):
         # Build final config (no MCP section - registered via API)
         opencode_config: dict[str, Any] = {
             "$schema": "https://opencode.ai/config.json",
-            "model": "github-copilot/gpt-5-mini", # TODO: temporary free model
+            "model": "github-copilot/claude-opus-4.6",# gpt-5-mini", # TODO: temporary free model
         }
 
         if agents_config:
