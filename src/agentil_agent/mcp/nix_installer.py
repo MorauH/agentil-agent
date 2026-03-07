@@ -37,7 +37,7 @@ def _parse_repo_name(repo_url: str) -> str:
         parsed = urlparse(repo_url)
         path_part = parsed.path
 
-    path_parts = path_part.strip("/").rstrip(".git").split("/")
+    path_parts = path_part.strip("/").removesuffix(".git").split("/")
     if len(path_parts) >= 1 and path_parts[-1]:
         return path_parts[-1]
 

@@ -174,9 +174,24 @@ class OpenCodeAgent(BaseAgent):
             }
 
             # Add MCP tool patterns for this assistant's enabled MCPs
-            for mcp_id in assistant.enabled_mcps:
-                # Enable all tools from this MCP server
-                agent_config["tools"][f"{mcp_id}_*"] = True
+            for mcp_entry in assistant.enabled_mcps:
+                if "/" in mcp_entry:
+                    # Subgroup entry: "server_id/subgroup" — enable specific tools
+                    server_id, subgroup_key = mcp_entry.split("/", 1)
+                    info = self._mcp_manager.get_server(server_id) if self._mcp_manager else None
+                    if info and info.manifest and subgroup_key in info.manifest.subgroups:
+                        for tool_name in info.manifest.subgroups[subgroup_key].tools:
+                            agent_config["tools"][f"{server_id}_{tool_name}"] = True
+                    else:
+                        # Subgroup not found in manifest — fall back to wildcard
+                        logger.warning(
+                            "Subgroup '%s' not found for MCP '%s', using wildcard",
+                            subgroup_key, server_id,
+                        )
+                        agent_config["tools"][f"{server_id}_*"] = True
+                else:
+                    # Bare server_id — enable all tools from this MCP server
+                    agent_config["tools"][f"{mcp_entry}_*"] = True
 
             # Per-assistant model override
             if assistant.model:

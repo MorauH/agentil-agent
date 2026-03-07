@@ -55,6 +55,48 @@ class MCPResourceHint:
 
 
 @dataclass
+class MCPSubgroup:
+    """A named subset of tools within an MCP server.
+
+    MCP servers can declare subgroups in ``mcp-manifest.json`` to allow
+    fine-grained tool activation.  For example, a git MCP server might
+    declare ``read`` and ``write`` subgroups so that an assistant can be
+    granted read-only access without write permissions.
+
+    When subgroups are present, ``enabled_mcps`` entries use the format
+    ``"<server_id>/<subgroup>"`` (e.g. ``"mcp-git/read"``).  Enabling
+    the bare ``server_id`` without a subgroup suffix activates *all*
+    subgroups.
+    """
+
+    label: str
+    """Human-readable label for the UI (e.g. ``"Git Read"``)."""
+
+    description: str
+    """Short description shown to the user."""
+
+    tools: list[str] = field(default_factory=list)
+    """Tool names belonging to this subgroup."""
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "label": self.label,
+            "description": self.description,
+            "tools": self.tools,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> MCPSubgroup:
+        """Create from dictionary."""
+        return cls(
+            label=data.get("label", ""),
+            description=data.get("description", ""),
+            tools=data.get("tools", []),
+        )
+
+
+@dataclass
 class MCPManifest:
     """Declarative metadata from an MCP server's ``mcp-manifest.json``.
 
@@ -82,19 +124,40 @@ class MCPManifest:
     others may overlap with ``ui_resources``.
     """
 
+    subgroups: dict[str, MCPSubgroup] = field(default_factory=dict)
+    """Named tool subgroups for fine-grained activation.
+
+    Keys are subgroup identifiers (e.g. ``"read"``, ``"write"``).
+    When present, ``enabled_mcps`` entries can use the format
+    ``"<server_id>/<subgroup>"`` to enable specific subgroups.
+    An empty dict means no subgroups — the server is treated as a
+    single unit.
+    """
+
+    @property
+    def has_subgroups(self) -> bool:
+        """Whether this manifest declares any subgroups."""
+        return bool(self.subgroups)
+
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        return {
+        result: dict = {
             "name": self.name,
             "description": self.description,
             "version": self.version,
             "ui_resources": [r.to_dict() for r in self.ui_resources],
             "init_dirs": self.init_dirs,
         }
+        if self.subgroups:
+            result["subgroups"] = {
+                k: v.to_dict() for k, v in self.subgroups.items()
+            }
+        return result
 
     @classmethod
     def from_dict(cls, data: dict) -> MCPManifest:
         """Create from dictionary."""
+        subgroups_data = data.get("subgroups", {})
         return cls(
             name=data.get("name"),
             description=data.get("description"),
@@ -103,6 +166,9 @@ class MCPManifest:
                 MCPResourceHint.from_dict(r) for r in data.get("ui_resources", [])
             ],
             init_dirs=data.get("init_dirs", []),
+            subgroups={
+                k: MCPSubgroup.from_dict(v) for k, v in subgroups_data.items()
+            },
         )
 
 

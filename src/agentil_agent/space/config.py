@@ -115,7 +115,12 @@ class SpaceConfig(BaseModel):
 
     @property
     def all_enabled_mcps(self) -> list[str]:
-        """Deduplicated union of ``enabled_mcps`` across all assistants.
+        """Deduplicated union of MCP *server IDs* across all assistants.
+
+        Entries in ``AssistantConfig.enabled_mcps`` may use the subgroup
+        format ``"server_id/subgroup"`` — this property strips the
+        subgroup suffix so that callers get bare server IDs suitable for
+        server-level operations (e.g. registration, installation checks).
 
         Returns:
             Ordered list of unique MCP server IDs referenced by any
@@ -124,10 +129,11 @@ class SpaceConfig(BaseModel):
         seen: set[str] = set()
         result: list[str] = []
         for assistant in self.assistants:
-            for mcp_id in assistant.enabled_mcps:
-                if mcp_id not in seen:
-                    seen.add(mcp_id)
-                    result.append(mcp_id)
+            for mcp_entry in assistant.enabled_mcps:
+                server_id = mcp_entry.split("/", 1)[0]
+                if server_id not in seen:
+                    seen.add(server_id)
+                    result.append(server_id)
         return result
 
     # ------------------------------------------------------------------

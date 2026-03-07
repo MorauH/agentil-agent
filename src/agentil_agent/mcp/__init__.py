@@ -4,7 +4,7 @@ MCP (Model Context Protocol) server management.
 Downloads MCP servers and connects to local or remote servers.
 """
 
-from .types import MCPManifest, MCPResourceHint, MCPServerInfo
+from .types import MCPManifest, MCPResourceHint, MCPServerInfo, MCPSubgroup
 from .manager import MCPManager, MCP_REGISTRY_FILENAME
 from .nix_installer import (
     delete_repo_clone,
@@ -19,6 +19,7 @@ __all__ = [
     "MCPManifest",
     "MCPResourceHint",
     "MCPServerInfo",
+    "MCPSubgroup",
     # Manager
     "MCPManager",
     "MCP_REGISTRY_FILENAME",
