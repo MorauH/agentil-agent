@@ -29,9 +29,9 @@ from .session import Session, SessionManager
 from .streaming import StreamManager
 
 if TYPE_CHECKING:
-    from ...config import Config, OpenCodeConfig
-    from ...space import BaseSpace
-    from ...mcp import MCPManager
+    from agentil_agent.core.config import Config, OpenCodeConfig
+    from agentil_agent.core.space import BaseSpace
+    from agentil_agent.core.mcp import MCPManager
 
 logger = logging.getLogger(__name__)
 

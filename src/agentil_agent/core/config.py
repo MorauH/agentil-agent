@@ -56,9 +56,6 @@ class OpenCodeConfig(BaseModel):
     )
     timeout: float = Field(default=30.0, description="Request timeout in seconds")
     
-    # Deprecated - kept for backward compatibility
-    port: int = Field(default=4096, description="Deprecated: use base_port instead")
-
 
 # =============================================================================
 # STT/TTS Configuration

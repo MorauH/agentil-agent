@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING
 from .exceptions import OpenCodeNotInstalledError
 
 if TYPE_CHECKING:
-    from .config import Config
     from .connection import ConnectionManager
 
 logger = logging.getLogger(__name__)

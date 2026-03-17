@@ -20,9 +20,6 @@ from .nix_installer import (
     update_remote_repo,
 )
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger(__name__)
 
 # Registry filename

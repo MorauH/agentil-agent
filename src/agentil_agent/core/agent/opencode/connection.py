@@ -12,9 +12,6 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-if TYPE_CHECKING:
-    from .config import Config
-
 logger = logging.getLogger(__name__)
 
 

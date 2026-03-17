@@ -2,7 +2,6 @@
 Agent abstraction and implementations.
 
 Provides a common interface for different agent backends (OpenCode, LangChain, etc.)
-with dependency injection support.
 """
 
 from typing import Any
@@ -13,7 +12,6 @@ from .types import (
     AgentMessage,
     AgentResponse,
     AgentStreamChunk,
-    AgentCapabilitiesInfo,
     AgentConfig,
 )
 from .exceptions import (
@@ -102,14 +100,15 @@ except ImportError:
 __all__ = [
     # Base classes
     "BaseAgent",
-    "BaseAgentFactory",
     "AgentCapabilities",
+    # Factory functions
+    "create_agent",
+    "list_available_agents",
     # Types
     "AgentSession",
     "AgentMessage",
     "AgentResponse",
     "AgentStreamChunk",
-    "AgentCapabilitiesInfo",
     "AgentConfig",
     # Exceptions
     "AgentError",
@@ -124,8 +123,4 @@ __all__ = [
     "AgentModelError",
     "AgentStreamError",
     "AgentNotSupportedError",
-    # Factory functions
-    "create_agent",
-    "register_agent_factory",
-    "list_available_agents",
 ]

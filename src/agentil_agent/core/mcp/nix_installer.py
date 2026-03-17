@@ -223,7 +223,7 @@ def get_mcp_executable(mcp_path, nix_attr: str = ".") -> str:
 
 if __name__ == "__main__":
     try:
-        cloned_repo = get_remote_repo(repo_url="git@github.com:agentil-ai/mcp-rag.git")
+        cloned_repo = get_remote_repo(repo_url="git@github.com:morauh/mcp-rag.git")
         executable_path = get_mcp_executable(mcp_path=cloned_repo)
         print(executable_path)
     except Exception as e:

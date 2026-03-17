@@ -101,8 +101,7 @@ class MCPManifest:
     """Declarative metadata from an MCP server's ``mcp-manifest.json``.
 
     Read during installation and stored in the MCP registry so that
-    consumers (e.g. code-report) can render appropriate UI without
-    hardcoded knowledge of individual MCP servers.
+    consumers can render appropriate UI.
     """
 
     name: str | None = None
