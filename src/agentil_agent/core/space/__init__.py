@@ -6,16 +6,15 @@ Provides a common interface for different space backends
 """
 
 from pathlib import Path
-from typing import Any
 
 from .base import BaseSpace, BaseSpaceFactory, SpaceCapabilities
-from .config import SpaceConfig, AssistantConfig, SPACE_CONFIG_FILENAME
+from .config import SpaceConfig, AssistantConfig
 from .exceptions import (
     SpaceError,
     SpaceNotReadyError,
     SpaceInitializationError,
 )
-from .manager import SpaceManager, SpaceInfo, DEFAULT_SPACE_ID
+from .manager import SpaceManager, SpaceInfo
 
 # =============================================================================
 # Space Factory Registry
@@ -105,22 +104,18 @@ except ImportError:
 __all__ = [
     # Base classes
     "BaseSpace",
-    "BaseSpaceFactory",
     "SpaceCapabilities",
+    # Factory functions
+    "create_space",
+    "list_available_space_types",
     # Configuration
     "SpaceConfig",
     "AssistantConfig",
-    "SPACE_CONFIG_FILENAME",
     # Manager
     "SpaceManager",
     "SpaceInfo",
-    "DEFAULT_SPACE_ID",
     # Exceptions
     "SpaceError",
     "SpaceNotReadyError",
     "SpaceInitializationError",
-    # Factory functions
-    "create_space",
-    "register_space_factory",
-    "list_available_space_types",
 ]

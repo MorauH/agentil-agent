@@ -4,10 +4,8 @@ Basic directory implementation.
 No containerization
 """
 
-from .space import DirectorySpace, DirectorySpaceFactory
+from .space import DirectorySpaceFactory
 
 __all__ = [
-    # Agent
-    "DirectorySpace",
     "DirectorySpaceFactory",
 ]

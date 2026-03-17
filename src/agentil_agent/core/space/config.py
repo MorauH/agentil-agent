@@ -25,7 +25,7 @@ SPACE_CONFIG_FILENAME = "space.toml"
 # =============================================================================
 
 # Default voice-assistant prompt optimized for TTS output
-DEFAULT_ASSISTANT_PROMPT = """You are a voice assistant. Your responses will be spoken aloud via text-to-speech.
+DEFAULT_ASSISTANT_PROMPT = """You are an assistant. Your responses will be spoken aloud via text-to-speech.
 
 Guidelines:
 - Keep responses concise and conversational
@@ -226,35 +226,6 @@ class SpaceConfig(BaseModel):
             if assistant.name == target_name:
                 return assistant
         return None
-
-
-# =============================================================================
-# Utility Functions
-# =============================================================================
-
-
-def get_space_config(space_path: Path | str) -> SpaceConfig:
-    """
-    Load space configuration from a directory.
-
-    Args:
-        space_path: Path to space directory
-
-    Returns:
-        SpaceConfig instance
-    """
-    return SpaceConfig.load(Path(space_path))
-
-
-def save_space_config(config: SpaceConfig, space_path: Path | str) -> None:
-    """
-    Save space configuration to a directory.
-
-    Args:
-        config: SpaceConfig to save
-        space_path: Path to space directory
-    """
-    config.save(Path(space_path))
 
 
 # =============================================================================

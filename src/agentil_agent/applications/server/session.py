@@ -15,7 +15,7 @@ import numpy as np
 
 from .audio import AudioBuffer, decode_audio_to_pcm, encode_audio, split_text_into_sentences
 from .agent import BaseAgent, create_agent
-from .space import BaseSpace, SpaceManager, SpaceInfo as SpaceInfoInternal, DEFAULT_SPACE_ID
+from .space import BaseSpace, SpaceManager, SpaceInfo as SpaceInfoInternal
 from .mcp import MCPManager, MCPServerInfo
 from .config import Config
 from .protocol import (
