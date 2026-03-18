@@ -7,95 +7,20 @@ Provides transcription of audio data (numpy arrays, bytes, or files).
 from __future__ import annotations
 
 import logging
-import warnings
 from typing import TYPE_CHECKING
-
 import numpy as np
-import torch
 import whisper
 
 if TYPE_CHECKING:
     from whisper import Whisper
 
+from .torch_utils import get_best_device
+
+
 logger = logging.getLogger(__name__)
 
 # Whisper expects 16kHz audio
 SAMPLE_RATE = 16000
-
-
-def get_cuda_compute_capability() -> tuple[int, int] | None:
-    """
-    Get the CUDA compute capability of the current GPU.
-    
-    Returns:
-        Tuple of (major, minor) version, or None if CUDA unavailable.
-    """
-    if not torch.cuda.is_available():
-        return None
-    try:
-        device = torch.cuda.current_device()
-        return torch.cuda.get_device_capability(device)
-    except Exception:
-        return None
-
-
-def is_cuda_compatible() -> bool:
-    """
-    Check if the current GPU is compatible with the installed PyTorch.
-    
-    Tests by running a small tensor operation on CUDA.
-    
-    Returns:
-        True if CUDA works, False otherwise.
-    """
-    if not torch.cuda.is_available():
-        return False
-    
-    try:
-        # Suppress the UserWarning about incompatible GPU
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message=".*CUDA capability.*not compatible.*")
-            # Try a simple tensor operation on CUDA
-            x = torch.tensor([1.0, 2.0, 3.0], device="cuda")
-            y = x * 2
-            _ = y.cpu()  # Force sync
-        return True
-    except RuntimeError as e:
-        if "no kernel image" in str(e) or "CUDA" in str(e):
-            return False
-        raise
-
-
-def get_best_device(requested: str = "auto") -> str:
-    """
-    Determine the best available device for Whisper inference.
-    
-    Args:
-        requested: Device preference ('auto', 'cpu', 'cuda')
-    
-    Returns:
-        Device string to use ('cpu' or 'cuda')
-    """
-    if requested == "cpu":
-        return "cpu"
-    
-    if requested in ("cuda", "auto"):
-        if torch.cuda.is_available():
-            if is_cuda_compatible():
-                return "cuda"
-            else:
-                cap = get_cuda_compute_capability()
-                cap_str = f"sm_{cap[0]}{cap[1]}" if cap else "unknown"
-                logger.warning(
-                    f"CUDA device detected (compute capability {cap_str}) but not compatible "
-                    f"with installed PyTorch. Falling back to CPU for Whisper. "
-                    f"Consider upgrading PyTorch."
-                )
-                return "cpu"
-        elif requested == "cuda":
-            logger.warning("CUDA requested but not available, falling back to CPU")
-    
-    return "cpu"
 
 
 class STTEngine:

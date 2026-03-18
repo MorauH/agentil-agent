@@ -13,7 +13,7 @@ console = Console()
 
 
 @click.group()
-@click.version_option(version="0.3.0", prog_name="agentil-agent")
+@click.version_option(version="0.3.0", prog_name="agentil-server")
 def cli() -> None:
     """Agentil Server - Voice agent"""
     pass

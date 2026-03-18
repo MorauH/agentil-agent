@@ -1,5 +1,5 @@
 """
-Agentil Agent - WebSocket voice server for AI agents.
+Agentil Agent
 
 Provides a WebSocket API for voice interaction with various AI agents,
 supporting STT (speech-to-text) and TTS (text-to-speech).
