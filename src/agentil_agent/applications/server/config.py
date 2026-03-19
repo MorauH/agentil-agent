@@ -68,6 +68,8 @@ class AppConfig(BaseModel):
 
     server: ServerConfig = Field(default_factory=ServerConfig)
     audio: AudioConfig = Field(default_factory=AudioConfig)
+    core: CoreConfig = Field(default_factory=CoreConfig)
+    infra: InfraConfig = Field(default_factory=InfraConfig)
 
     @classmethod
     def get_config_paths(cls) -> list[Path]:
@@ -76,16 +78,15 @@ class AppConfig(BaseModel):
 
         # Project-level config
         cwd = Path.cwd()
-        paths.append(cwd / "agentil-agent.toml")
-        paths.append(cwd / ".agentil-agent.toml")
+        paths.append(cwd / "agentil-server.toml")
+        paths.append(cwd / ".agentil-server.toml")
 
         # User-level config
         config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-        paths.append(config_home / "agentil-agent" / "config.toml")
-        paths.append(config_home / "opencode" / "voice.toml")
+        paths.append(config_home / "agentil-server" / "config.toml")
 
         # Home directory
-        paths.append(Path.home() / ".agentil-agent.toml")
+        paths.append(Path.home() / ".agentil-server.toml")
 
         return paths
 
@@ -93,10 +94,10 @@ class AppConfig(BaseModel):
     def get_default_config_path(cls) -> Path:
         """Get the default user config path."""
         config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-        return config_home / "agentil-agent" / "config.toml"
+        return config_home / "agentil-server" / "config.toml"
 
     @classmethod
-    def load(cls, config_path: Path | str | None = None) -> "Config":
+    def load(cls, config_path: Path | str | None = None) -> "AppConfig":
         """
         Load configuration from file.
 
@@ -164,7 +165,7 @@ class AppConfig(BaseModel):
 
     def get_working_dir(self) -> Path:
         """Get the resolved working directory path (default space workspace)."""
-        return self.get_spaces_root() / "default" / "workspace"
+        return self.core.get_spaces_root() / "default" / "workspace"
 
     def ensure_working_dir(self) -> Path:
         """Ensure the working directory exists and return its path."""
@@ -201,6 +202,6 @@ def set_config(config: AppConfig) -> None:
 
 
 if __name__ == "__main__":
-    config = Config()
+    config = AppConfig()
     print("Default configuration:")
     print(config.to_toml())

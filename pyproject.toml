@@ -53,8 +53,7 @@ client = [
 
 # Convenience
 all = [
-    "agentil-agent[voice]",
-    "agentil-agent[websocket]"
+    "agentil-agent[tts, stt, server, client]",
 ]
 dev = [
     "pytest>=8.0.0",
@@ -73,6 +72,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentil_agent"]
+
+[tool.uv]
+package = true
 
 [tool.uv.sources]
 melotts = { git = "https://github.com/myshell-ai/MeloTTS.git" }

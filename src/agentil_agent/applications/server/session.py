@@ -8,16 +8,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Coroutine
 
-import numpy as np
 
-from .audio import AudioBuffer, decode_audio_to_pcm, encode_audio, split_text_into_sentences
-from .agent import BaseAgent, create_agent
-from .space import BaseSpace, SpaceManager, SpaceInfo as SpaceInfoInternal
-from .mcp import MCPManager, MCPServerInfo
-from .config import Config
+from agentil_agent.core.audio import AudioBuffer, split_text_into_sentences
+from agentil_agent.infrastructure.audio import decode_audio_to_pcm, encode_audio
+from agentil_agent.core.agent import BaseAgent, create_agent
+from agentil_agent.core.space import BaseSpace, SpaceManager
+from agentil_agent.core.mcp import MCPManager, MCPServerInfo
+from .config import AppConfig
 from .protocol import (
     SpaceInfo,
     MCPInfo,
@@ -39,8 +38,8 @@ from .protocol import (
 )
 if TYPE_CHECKING:
     from numpy.typing import NDArray
-    from .stt import STTEngine
-    from .tts import TTSEngine
+    from agentil_agent.infrastructure.stt import STTEngine
+    from agentil_agent.infrastructure.tts import TTSEngine
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +63,7 @@ class Session:
 
     def __init__(
         self,
-        config: Config,
+        config: AppConfig,
         send_message: MessageSender,
         send_binary: BinarySender,
         session_id: str,
@@ -75,7 +74,7 @@ class Session:
         Initialize a voice session.
 
         Args:
-            config: Server configuration
+            config: Server app configuration
             send_message: Callback to send JSON messages to client
             send_binary: Callback to send binary data to client
             session_id: Unique session identifier
@@ -118,7 +117,7 @@ class Session:
     @classmethod
     def create_headless(
         cls,
-        config: Config,
+        config: AppConfig,
         space_manager: SpaceManager | None = None,
         mcp_manager: MCPManager | None = None,
         session_id: str = "headless",
@@ -131,7 +130,7 @@ class Session:
         stream_text() instead of WebSocket callbacks.
 
         Args:
-            config: Server configuration
+            config: Server app configuration
             space_manager: Optional SpaceManager for space management
             mcp_manager: Optional MCPManager for MCP server management
             session_id: Session identifier (default: "headless")
@@ -265,22 +264,22 @@ class Session:
     def _get_stt_engine(self) -> STTEngine:
         """Get or create STT engine."""
         if self._stt_engine is None:
-            from .stt import STTEngine
+            from agentil_agent.infrastructure.stt import STTEngine
 
-            logger.info(f"Loading STT engine (model: {self.config.stt.model})")
-            self._stt_engine = STTEngine(model=self.config.stt.model)
+            logger.info(f"Loading STT engine (model: {self.config.infra.stt.model})")
+            self._stt_engine = STTEngine(model=self.config.infra.stt.model)
         return self._stt_engine
 
     def _get_tts_engine(self) -> TTSEngine:
         """Get or create TTS engine."""
         if self._tts_engine is None:
-            from .tts import TTSEngine
+            from agentil_agent.infrastructure.tts import TTSEngine
 
-            logger.info(f"Loading TTS engine (speaker: {self.config.tts.speaker})")
+            logger.info(f"Loading TTS engine (speaker: {self.config.infra.tts.speaker})")
             self._tts_engine = TTSEngine(
-                device=self.config.tts.device,
-                speaker=self.config.tts.speaker,
-                speed=self.config.tts.speed,
+                device=self.config.infra.tts.device,
+                speaker=self.config.infra.tts.speaker,
+                speed=self.config.infra.tts.speed,
             )
         return self._tts_engine
 
@@ -294,8 +293,8 @@ class Session:
         is_new_agent = self._agent is None
 
         if self._agent is None:
-            logger.info(f"Creating agent backend: {self.config.agent.type}")
-            self._agent = create_agent(self.config.agent.type, self.config)
+            logger.info(f"Creating agent backend: {self.config.core.agent.type}")
+            self._agent = create_agent(self.config.core.agent.type, self.config.core)
 
         # Ensure space is loaded BEFORE initialization
         # This is critical because OpenCode server binds to its working directory at startup
@@ -916,7 +915,7 @@ class SessionManager:
 
     def __init__(
         self,
-        config: Config,
+        config: AppConfig,
         space_manager: SpaceManager | None = None,
         mcp_manager: MCPManager | None = None,
     ) -> None:
@@ -924,7 +923,7 @@ class SessionManager:
         Initialize the session manager.
 
         Args:
-            config: Server configuration
+            config: Server app configuration
             space_manager: Optional SpaceManager for space management
             mcp_manager: Optional MCPManager for MCP server management
         """

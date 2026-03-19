@@ -191,9 +191,9 @@ Yield to user (async generator)
 ### Simple Usage (Facade)
 ```python
 from agentil_agent.agent import create_agent
-from agentil_agent.config import Config
+from agentil_agent.core.config import CoreConfig
 
-config = Config()
+config = CoreConfig()
 agent = create_agent(config.agent.type, config)
 
 async def main():

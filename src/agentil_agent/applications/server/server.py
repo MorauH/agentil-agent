@@ -18,7 +18,7 @@ from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .config import Config, get_config
+from .config import AppConfig, get_config
 from .protocol import (
     AudioEndMessage,
     AudioStartMessage,
@@ -33,13 +33,12 @@ from .protocol import (
     parse_client_message,
 )
 from .session import SessionManager
-from .space import SpaceManager
-from .mcp import MCPManager
+from agentil_agent.core.space import SpaceManager
+from agentil_agent.core.mcp import MCPManager
 
 logger = logging.getLogger(__name__)
 
-# Version
-__version__ = "0.3.0"
+from agentil_agent import __version__
 
 
 # =============================================================================
@@ -52,7 +51,7 @@ class AppState:
 
     def __init__(
         self,
-        config: Config,
+        config: AppConfig,
         space_manager: SpaceManager | None = None,
         mcp_manager: MCPManager | None = None,
     ) -> None:
@@ -93,18 +92,18 @@ async def lifespan(app: FastAPI):
     space_manager: SpaceManager | None = None
     mcp_manager: MCPManager | None = None
 
-    if config.spaces.auto_initialize:
-        logger.info(f"Initializing SpaceManager at {config.get_spaces_root()}")
+    if config.core.spaces.auto_initialize:
+        logger.info(f"Initializing SpaceManager at {config.core.get_spaces_root()}")
         space_manager = SpaceManager(
-            spaces_root=config.get_spaces_root(),
-            default_space_type=config.spaces.default_space_type,
+            spaces_root=config.core.get_spaces_root(),
+            default_space_type=config.core.spaces.default_space_type,
         )
         await space_manager.initialize()
         logger.info(f"SpaceManager initialized with {len(space_manager.list_spaces())} spaces")
 
-    if config.mcp.auto_initialize:
-        logger.info(f"Initializing MCPManager at {config.get_mcp_base_path()}")
-        mcp_manager = MCPManager(base_path=config.get_mcp_base_path())
+    if config.core.mcp.auto_initialize:
+        logger.info(f"Initializing MCPManager at {config.core.get_mcp_base_path()}")
+        mcp_manager = MCPManager(base_path=config.core.get_mcp_base_path())
         await mcp_manager.initialize()
         logger.info(f"MCPManager initialized with {len(mcp_manager.list_servers())} servers")
 
@@ -116,7 +115,7 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"Agentil Agent Server v{__version__} starting...")
     logger.info(f"Server: {config.server.host}:{config.server.port}")
-    logger.info(f"OpenCode: {config.agent.opencode.host}:{config.agent.opencode.base_port}-{config.agent.opencode.base_port + config.agent.opencode.max_servers - 1}")
+    logger.info(f"OpenCode: {config.core.agent.opencode.host}:{config.core.agent.opencode.base_port}-{config.core.agent.opencode.base_port + config.core.agent.opencode.max_servers - 1}")
     logger.info(f"Working directory: {config.get_working_dir()}")
     logger.info(f"Auth token: {_app_state.token[:8]}...")
 
@@ -145,7 +144,7 @@ async def lifespan(app: FastAPI):
 # =============================================================================
 
 
-def create_app(config: Config | None = None) -> FastAPI:
+def create_app(config: AppConfig | None = None) -> FastAPI:
     """
     Create the FastAPI application.
 
@@ -208,7 +207,7 @@ async def health_check() -> dict[str, Any]:
 async def server_info() -> dict[str, Any]:
     """Get server information."""
     state = get_app_state()
-    opencode_cfg = state.config.agent.opencode
+    opencode_cfg = state.config.core.agent.opencode
     return {
         "version": __version__,
         "opencode": {
@@ -218,11 +217,11 @@ async def server_info() -> dict[str, Any]:
             "port_range": f"{opencode_cfg.base_port}-{opencode_cfg.base_port + opencode_cfg.max_servers - 1}",
         },
         "stt": {
-            "model": state.config.stt.model,
+            "model": state.config.infra.stt.model,
         },
         "tts": {
-            "speaker": state.config.tts.speaker,
-            "speed": state.config.tts.speed,
+            "speaker": state.config.infra.tts.speaker,
+            "speed": state.config.infra.tts.speed,
         },
         "audio": {
             "input_format": state.config.audio.input_format,
@@ -402,7 +401,7 @@ def run_server(
     )
 
     # Load config
-    config = Config.load(config_path) if config_path else Config.load()
+    config = AppConfig.load(config_path) if config_path else AppConfig.load()
 
     # Apply overrides
     if host:
@@ -414,7 +413,7 @@ def run_server(
     token = config.ensure_token()
 
     # Save config if token was generated
-    config_file = Config.get_default_config_path()
+    config_file = AppConfig.get_default_config_path()
     if not config_file.exists():
         config.save(config_file)
         logger.info(f"Saved config to {config_file}")

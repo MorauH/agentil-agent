@@ -29,7 +29,7 @@ from .session import Session, SessionManager
 from .streaming import StreamManager
 
 if TYPE_CHECKING:
-    from agentil_agent.core.config import Config, OpenCodeConfig
+    from agentil_agent.core.config import CoreConfig, OpenCodeConfig
     from agentil_agent.core.space import BaseSpace
     from agentil_agent.core.mcp import MCPManager
 
@@ -210,7 +210,7 @@ class OpenCodeAgent(BaseAgent):
         # Build final config (no MCP section - registered via API)
         opencode_config: dict[str, Any] = {
             "$schema": "https://opencode.ai/config.json",
-            "model": "github-copilot/claude-opus-4.6",# github-copilot/gpt-5-mini",
+            "model": "github-copilot/gpt-5-mini", #"github-copilot/claude-opus-4.6",
         }
 
         if agents_config:
@@ -670,11 +670,11 @@ class OpenCodeAgent(BaseAgent):
 class OpenCodeAgentFactory(BaseAgentFactory):
     """Factory for creating OpenCode agent instances."""
 
-    def create_agent(self, config: "Config") -> BaseAgent:
+    def create_agent(self, config: "CoreConfig") -> BaseAgent:
         """Create an OpenCode agent instance.
 
         Args:
-            config: the full application `Config`
+            config: the core `Config`
         
         Note:
             The working directory is intentionally not set here.
@@ -684,7 +684,6 @@ class OpenCodeAgentFactory(BaseAgentFactory):
         """
 
         opencode_cfg = getattr(getattr(config, "agent", None), "opencode", None)
-        # Don't set working_dir here - it will be set by set_space() before initialize()
         return OpenCodeAgent(opencode_cfg, working_dir=None)
 
     def agent_type(self) -> str:

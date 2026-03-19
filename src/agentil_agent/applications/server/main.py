@@ -11,9 +11,10 @@ from rich.console import Console
 
 console = Console()
 
+from agentil_agent import __version__
 
 @click.group()
-@click.version_option(version="0.3.0", prog_name="agentil-server")
+@click.version_option(version=__version__, prog_name="agentil-server")
 def cli() -> None:
     """Agentil Server - Voice agent"""
     pass
@@ -65,35 +66,6 @@ def serve(
     )
 
 
-@cli.command()
-@click.option(
-    "--url",
-    "-u",
-    default="ws://localhost:8765/ws",
-    help="WebSocket URL",
-)
-@click.option(
-    "--token",
-    "-t",
-    required=True,
-    help="Authentication token",
-)
-@click.option(
-    "--tts/--no-tts",
-    default=False,
-    help="Enable TTS audio output",
-)
-def client(url: str, token: str, tts: bool) -> None:
-    """Connect to the server as a text client."""
-    import asyncio
-    from .client.text_client import run_client
-
-    try:
-        asyncio.run(run_client(url, token, tts))
-    except KeyboardInterrupt:
-        console.print("\n[dim]Goodbye![/dim]")
-
-
 @cli.command("config-show")
 @click.option(
     "--config",
@@ -105,9 +77,9 @@ def client(url: str, token: str, tts: bool) -> None:
 )
 def config_show(config_path: str | None) -> None:
     """Show current configuration."""
-    from .config import Config
+    from .config import AppConfig
 
-    config = Config.load(config_path) if config_path else Config.load()
+    config = AppConfig.load(config_path) if config_path else AppConfig.load()
     console.print(config.to_toml())
 
 
@@ -117,7 +89,7 @@ def config_show(config_path: str | None) -> None:
     "-o",
     type=click.Path(),
     default=None,
-    help="Output path (default: ~/.config/agentil-agent/config.toml)",
+    help="Output path (default: ~/.config/agentil-server/config.toml)",
 )
 @click.option(
     "--force",
@@ -128,9 +100,9 @@ def config_show(config_path: str | None) -> None:
 def config_init(output: str | None, force: bool) -> None:
     """Generate a default configuration file."""
     from pathlib import Path
-    from .config import Config
+    from .config import AppConfig
 
-    config = Config()
+    config = AppConfig()
 
     # Generate a token
     config.ensure_token()
@@ -139,7 +111,7 @@ def config_init(output: str | None, force: bool) -> None:
     if output:
         path = Path(output)
     else:
-        path = Config.get_default_config_path()
+        path = AppConfig.get_default_config_path()
 
     # Check if exists
     if path.exists() and not force:
@@ -171,13 +143,13 @@ def config_init(output: str | None, force: bool) -> None:
 def token(config_path: str | None, regenerate: bool) -> None:
     """Show or regenerate the authentication token."""
     import secrets
-    from .config import Config
+    from .config import AppConfig
 
-    config = Config.load(config_path) if config_path else Config.load()
+    config = AppConfig.load(config_path) if config_path else AppConfig.load()
 
     if regenerate:
         config.server.token = secrets.token_urlsafe(32)
-        config_file = Config.get_default_config_path()
+        config_file = AppConfig.get_default_config_path()
         config.save(config_file)
         console.print(f"[green]New token generated and saved to {config_file}[/green]")
     else:
@@ -189,10 +161,13 @@ def token(config_path: str | None, regenerate: bool) -> None:
 @cli.command("check")
 def check() -> None:
     """Check system dependencies and configuration."""
-    from .audio import check_ffmpeg_available
-    from .agent import create_agent, AgentError
-    from .config import Config
-
+    import asyncio
+    from pathlib import Path
+    from agentil_agent.infrastructure.audio import check_ffmpeg_available
+    from agentil_agent.core.agent import create_agent, AgentError
+    from agentil_agent.core.space import SpaceManager, SpaceError
+    from .config import AppConfig
+    
     console.print("[bold]Agentil Agent System Check[/bold]\n")
 
     # Check ffmpeg
@@ -203,9 +178,9 @@ def check() -> None:
         console.print("[red]✗[/red] ffmpeg not found (required for audio conversion)")
 
     # Check config
-    config = Config.load()
+    config = AppConfig.load()
     config_path = None
-    for path in Config.get_config_paths():
+    for path in AppConfig.get_config_paths():
         if path.exists():
             config_path = path
             break
@@ -222,26 +197,50 @@ def check() -> None:
     else:
         console.print(f"[yellow]![/yellow] Working directory doesn't exist: {working_dir}")
         console.print("    [dim](will be created on first run)[/dim]")
+    
+    loop = asyncio.get_event_loop()
+
+    # Check Space initialization
+    space_ok = False
+    space_manager = None
+    space = None
+    try:
+        spaces_root = Path(config.core.spaces.spaces_root)
+        space_manager = SpaceManager(spaces_root)
+        
+        space = loop.run_until_complete(space_manager.get_default_space())
+        loop.run_until_complete(space.initialize())
+        
+        space_ok = True
+    except SpaceError as err:
+        console.print(f"[red]✗[/red] {err}")
 
     # Check Agent initialization
     agent_ok = False
     try:
-        agent = create_agent(config.agent.type, config)
+        agent = create_agent(config.core.agent.type, config.core)
+        
+        # Set operating space
+        agent.set_space(space)
 
         async def init_agent() -> None:
             await agent.initialize()
             await agent.shutdown()
-
-        import asyncio
 
         asyncio.run(init_agent())
         agent_ok = True
     except AgentError as err:
         console.print(f"[red]✗[/red] {err}")
 
+    # Shutdown
+    try:
+        loop.run_until_complete(space_manager.shutdown())
+    except Exception:
+        pass
+
     # Summary
     console.print()
-    if ffmpeg_ok and agent_ok:
+    if ffmpeg_ok and space_ok and agent_ok:
         console.print("[green]All checks passed![/green]")
     else:
         console.print("[yellow]Some dependencies are missing.[/yellow]")
@@ -256,20 +255,20 @@ def check() -> None:
 )
 def test_tts(text: str) -> None:
     """Test text-to-speech functionality."""
-    from .config import Config
-    from .tts import TTSEngine
+    from .config import AppConfig
+    from agentil_agent.infrastructure.tts import TTSEngine
 
-    config = Config.load()
+    config = AppConfig.load()
 
     console.print("[bold]Testing TTS...[/bold]")
-    console.print(f"Speaker: {config.tts.speaker}")
-    console.print(f"Speed: {config.tts.speed}")
+    console.print(f"Speaker: {config.infra.tts.speaker}")
+    console.print(f"Speed: {config.infra.tts.speed}")
     console.print()
 
     tts = TTSEngine(
-        device=config.tts.device,
-        speaker=config.tts.speaker,
-        speed=config.tts.speed,
+        device=config.infra.tts.device,
+        speaker=config.infra.tts.speaker,
+        speed=config.infra.tts.speed,
     )
 
     console.print(f"Speaking: [italic]{text}[/italic]")
@@ -282,17 +281,26 @@ def test_tts(text: str) -> None:
 def test_agent(prompt: str) -> None:
     """Test configured agent backend."""
     import asyncio
+    from pathlib import Path
 
-    from .agent import AgentError, create_agent
-    from .config import Config
+    from agentil_agent.core.agent import AgentError, create_agent
+    from agentil_agent.core.space import SpaceManager
+    from .config import AppConfig
 
-    config = Config.load()
+    config = AppConfig.load()
 
-    console.print(f"[bold]Testing Agent Backend ({config.agent.type})...[/bold]\n")
+    console.print(f"[bold]Testing Agent Backend ({config.core.agent.type})...[/bold]\n")
 
     async def run() -> None:
-        agent = create_agent(config.agent.type, config)
+        agent = create_agent(config.core.agent.type, config.core)
+        space_manager = SpaceManager(Path(config.core.spaces.spaces_root))
+        space = await space_manager.get_default_space()
+        
         try:
+            await space.initialize()
+
+            agent.set_space(space)
+
             await agent.initialize()
             session = await agent.create_session(title="Agent Test")
 
@@ -308,6 +316,7 @@ def test_agent(prompt: str) -> None:
             console.print("\n[green]Agent test complete![/green]")
         finally:
             await agent.shutdown()
+            await space.shutdown()
 
     try:
         asyncio.run(run())
