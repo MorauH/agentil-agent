@@ -1,5 +1,5 @@
 {
-  description = "Agentil Agent - Voice interface bridge for OpenCode";
+  description = "Agentil Agent";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
@@ -58,20 +58,15 @@
             xorg.libX11
             xorg.libXtst
             xorg.libXi
-            
-            # OpenWakeWord dependencies
-            # (uses ONNX runtime which is bundled)
           ];
 
           postVenvCreation = ''
-            uv sync
-            uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
             python -m unidic download
           '';
 
           shellHook = ''
             venvShellHook
-            uv sync
+            uv sync --all-extras
             
             # Install PyTorch with CUDA 12.8 if not present
             if ! python -c "import torch" 2>/dev/null; then

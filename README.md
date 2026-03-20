@@ -1,13 +1,12 @@
-# Agentil Agent
+# Agentil
 
-WebSocket voice server for [OpenCode](https://opencode.ai) - enables speech-based interaction with the AI coding assistant.
+Agentic assistant base with speech-based support.
 
 ## Features
 
-- **WebSocket API** - Bidirectional audio/text streaming
-- **Speech-to-Text (STT)** - Whisper-based transcription
-- **Text-to-Speech (TTS)** - MeloTTS for natural voice output
-- **Flexible I/O** - Clients can send text OR audio, receive BOTH text AND audio
+- **Abstract Agent** - Use OpenCode, Langchain agents or inject your own solution
+- **Speech-to-Text (STT)** - Whisper-based local transcription
+- **Text-to-Speech (TTS)** - MeloTTS for natural voice output, locally generated
 - **Space Management** - Project-based workspaces with isolated configurations
 - **MCP Server Management** - Install, update, and delete MCP servers per-space
 
@@ -16,6 +15,18 @@ WebSocket voice server for [OpenCode](https://opencode.ai) - enables speech-base
 - Python 3.11 (specifically `>=3.11,<3.12`)
 - ffmpeg (for audio format conversion)
 - [OpenCode](https://opencode.ai/docs/) installed and available in PATH
+
+
+# Agentil Server/Client
+
+Voice assistant built on the Agentil-base
+
+## Additional Features
+
+- **WebSocket API** - Bidirectional audio/text streaming
+- **Flexible I/O** - Clients can send text OR audio, receive BOTH text AND audio
+- **Space Management** - Project-based workspaces with isolated configurations
+- **MCP Server Management** - Install, update, and delete MCP servers per-space
 
 ## Quick Start
 
@@ -36,15 +47,15 @@ uv sync
 ### 2. Generate Configuration
 
 ```bash
-agentil-agent config-init
+agentil-server config-init
 ```
 
-This creates `~/.config/agentil-agent/config.toml` with a generated auth token.
+This creates `~/.config/agentil-server/config.toml` with a generated auth token.
 
 ### 3. Start the Server
 
 ```bash
-agentil-agent serve
+agentil-server serve
 ```
 
 The server will display:
@@ -58,7 +69,7 @@ Authentication token: <your-token>
 In a new terminal:
 
 ```bash
-agentil-agent client --token <your-token>
+agentil-client --token <your-token>
 ```
 
 You're now connected! Type messages and press Enter to chat with OpenCode.
@@ -69,61 +80,61 @@ You're now connected! Type messages and press Enter to chat with OpenCode.
 
 ```bash
 # Start server with defaults
-agentil-agent serve
+agentil-server serve
 
 # Custom host/port
-agentil-agent serve --host 127.0.0.1 --port 9000
+agentil-server serve --host 127.0.0.1 --port 9000
 
 # Debug logging
-agentil-agent serve -l DEBUG
+agentil-server serve -l DEBUG
 
 # Use specific config file
-agentil-agent serve -c /path/to/config.toml
+agentil-server serve -c /path/to/config.toml
 ```
 
 ### Client Commands
 
 ```bash
 # Connect to server
-agentil-agent client --token <token>
+agentil-client --token <token>
 
 # Connect with TTS audio playback
-agentil-agent client --token <token> --tts
+agentil-client --token <token> --tts
 
 # Connect to custom URL
-agentil-agent client --url ws://192.168.1.100:8765/ws --token <token>
+agentil-client --url ws://192.168.1.100:8765/ws --token <token>
 ```
 
 ### Configuration Commands
 
 ```bash
 # Generate default config
-agentil-agent config-init
+agentil-server config-init
 
 # Overwrite existing config
-agentil-agent config-init --force
+agentil-server config-init --force
 
 # Show current config
-agentil-agent config-show
+agentil-server config-show
 
 # Show/regenerate auth token
-agentil-agent token
-agentil-agent token --regenerate
+agentil-server token
+agentil-server token --regenerate
 ```
 
 ### Testing Commands
 
 ```bash
 # Check system dependencies
-agentil-agent check
+agentil-server check
 
 # Test TTS
-agentil-agent test-tts
-agentil-agent test-tts --text "Hello world"
+agentil-server test-tts
+agentil-server test-tts --text "Hello world"
 
 # Test agent backend
-agentil-agent test-agent
-agentil-agent test-agent -p "What is 2+2?"
+agentil-server test-agent
+agentil-server test-agent -p "What is 2+2?"
 ```
 
 ## Client Commands (In-Session)
@@ -147,7 +158,7 @@ Once connected with `agentil-agent client`, these commands are available:
 
 ## Configuration
 
-Config file location: `~/.config/agentil-agent/config.toml`
+Config file location: `~/.config/agentil-server/config.toml`
 
 ### Minimal Config
 
@@ -183,7 +194,7 @@ timeout = 30.0
 
 [stt]
 model = "base"  # tiny, base, small, medium, large
-device = "auto"  # cpu, cuda, auto
+device = "auto"  # cpu, cuda, mps, auto
 
 [tts]
 speaker = "EN-BR"  # EN-US, EN-BR, EN-AU, EN-Default
@@ -238,7 +249,7 @@ brew install ffmpeg
 ### "Agent error" / OpenCode not starting
 
 1. Ensure OpenCode is installed: `opencode --version`
-2. Check OpenCode can start manually: `opencode serve`
+2. Check OpenCode can start manually: `opencode .`, and test prompt
 3. Verify `[agent.opencode]` settings in config
 
 ### CUDA Errors
@@ -251,76 +262,6 @@ device = "cpu"
 
 [tts]
 device = "cpu"
-```
-
-## Development
-
-### Running from Source
-
-```bash
-# With nix
-nix develop -c python -m agentil_agent.main serve
-
-# With UV
-uv run agentil-agent serve
-
-# Direct Python
-python -m agentil_agent.main serve
-```
-
-### Testing Modules
-
-```bash
-# Test TTS module
-python -m agentil_agent.tts
-
-# Test STT module
-python -m agentil_agent.stt
-
-# Test config loading
-python -m agentil_agent.config
-```
-
-### Project Structure
-
-```
-agentil-agent/
-├── src/agentil_agent/
-│   ├── main.py          # CLI entry point
-│   ├── server.py        # WebSocket server (FastAPI)
-│   ├── session.py       # Session manager
-│   ├── protocol.py      # WebSocket message types
-│   ├── config.py        # Configuration (Pydantic)
-│   ├── stt.py           # Speech-to-Text (Whisper)
-│   ├── tts.py           # Text-to-Speech (MeloTTS)
-│   ├── audio.py         # Audio format conversion
-│   ├── agent/           # Agent backends (OpenCode, mock)
-│   ├── space/           # Space management
-│   ├── mcp/             # MCP server management
-│   └── client/          # Test clients
-├── pyproject.toml
-├── flake.nix
-```
-
-## WebSocket Protocol
-
-For building custom clients, see [CLIENT_INTEGRATION.md](./CLIENT_INTEGRATION.md).
-
-### Quick Protocol Overview
-
-**Connect:** `ws://host:port/ws?token=<token>`
-
-**Send text:**
-```json
-{"type": "text", "content": "Hello"}
-```
-
-**Receive response (streaming):**
-```json
-{"type": "response_start"}
-{"type": "response_delta", "content": "Hi "}
-{"type": "response_delta", "content": "there!"}
-{"type": "response_end"}
 ```
 
 ## License

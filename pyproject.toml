@@ -1,7 +1,7 @@
 [project]
 name = "agentil-agent"
 version = "0.3.0"
-description = "Voice server for OpenCode - WebSocket API with TTS/STT for AI coding assistant"
+description = "Containerized agentic AI assistants"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 license = {text = "MIT"}
@@ -10,35 +10,21 @@ authors = [
 ]
 keywords = ["agentil", "voice", "tts", "stt", "ai", "assistant", "websocket", "server"]
 
+# Core dependencies
 dependencies = [
-    # WebSocket Server
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.32.0",
-    "websockets>=13.0",
-    
     # OpenCode communication
     "httpx>=0.27.0",
     "httpx-sse>=0.4.0",
-    
-    # Audio utilities (numpy only — no torch)
-    "numpy>=1.26.0",
     
     # Configuration
     "pydantic>=2.5.0",
     "tomli>=2.0.0",
     "tomli-w>=1.0.0",
-    
-    # CLI/UI
-    "rich>=13.7.0",
-    "click>=8.1.0",
 ]
 
 [project.optional-dependencies]
 tts = [
-    # PyTorch with CUDA 12.8 support (install separately via pip)
-    # pip install torch torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
-    # "torch",
-    # "torchaudio",
+    "numpy>=1.26.0",
     "melotts",
     "unidic==1.1.0",
     "soxr==0.5.0",
@@ -47,14 +33,27 @@ tts = [
     "pydub>=0.25.0",
 ]
 stt = [
+    "numpy>=1.26.0",
     "openai-whisper>=20240930",
 ]
-voice = [
+
+# Application bundles
+server = [
     "agentil-agent[tts,stt]",
-    "scipy>=1.12.0",
+    
+    # WebSocket Server
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "websockets>=13.0",
 ]
+client = [
+    "rich>=13.7.0",
+    "click>=8.1.0",
+]
+
+# Convenience
 all = [
-    "agentil-agent[voice]",
+    "agentil-agent[tts, stt, server, client]",
 ]
 dev = [
     "pytest>=8.0.0",
@@ -64,7 +63,8 @@ dev = [
 ]
 
 [project.scripts]
-agentil-agent = "agentil_agent.main:cli"
+agentil-server = "agentil_agent.applications.server.main:main"
+agentil-client = "agentil_agent.applications.cli_client.main:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -73,10 +73,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentil_agent"]
 
+[tool.uv]
+package = true
+
 [tool.uv.sources]
-# Use local MeloTTS if available, otherwise fetch from git
-# Uncomment ONE of the following:
-# melotts = { path = "../depend/MeloTTS" }
 melotts = { git = "https://github.com/myshell-ai/MeloTTS.git" }
 
 # PyTorch CUDA 12.8 - install manually via pip:
